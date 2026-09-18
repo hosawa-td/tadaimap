@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import MapView, { Circle, Marker, type LatLng, type MapPressEvent } from "react-native-maps";
 import Slider from "@react-native-community/slider";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../../App";
@@ -19,13 +20,36 @@ import { colors, radius, spacing, typography } from "../theme/tokens";
 
 type Props = NativeStackScreenProps<RootStackParamList, "RegisterHome">;
 
+// 東京駅付近。現在地が取得できるまでの仮の表示位置。
+const FALLBACK_REGION = { lat: 35.681236, lng: 139.767125 };
+
 export default function RegisterHomeScreen({ navigation, route }: Props) {
   const fromSettings = route.params?.fromSettings ?? false;
   const { saveHome, homeRadiusM, loading } = useApp();
 
   const [radiusM, setRadiusM] = useState(fromSettings ? homeRadiusM : RADIUS_DEFAULT);
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const [statusText, setStatusText] = useState("まだ位置情報は取得していません。");
+  const [statusText, setStatusText] = useState(
+    fromSettings
+      ? `現在の設定：半径 ${homeRadiusM}m。ピンをドラッグするか地図をタップすると位置を変更できます。`
+      : "地図をタップするか「現在地を自宅として設定」を押して、自宅の位置を選んでください。"
+  );
+
+  useEffect(() => {
+    // 現在地を取得できる場合は、最初から地図の中心とピンの候補にしておく
+    // (自宅設定の変更時は保存済みの座標を持っていないため、現在地を初期値として使う)
+    (async () => {
+      try {
+        const permission = await requestLocationPermissions();
+        if (!permission.foreground) return;
+        const location = await getCurrentLocation();
+        setCoords((prev) => prev ?? location);
+      } catch {
+        // 取得できなくても地図はデフォルト位置のまま表示できるため、何もしない
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleUseCurrentLocation = async () => {
     setStatusText("位置情報を取得中…");
@@ -42,18 +66,27 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
           "現在地を取得しました。ただし「常に許可」が選択されていないため、アプリを閉じている間の自動判定はできません。"
         );
       } else {
-        setStatusText(
-          `現在地（緯度 ${location.lat.toFixed(4)} / 経度 ${location.lng.toFixed(4)} 付近）を自宅として設定しました。`
-        );
+        setStatusText("現在地を自宅として設定しました。ピンの位置は地図上でも調整できます。");
       }
     } catch (err) {
-      setStatusText("位置情報を取得できませんでした。あとで設定からやり直せます。");
+      setStatusText("位置情報を取得できませんでした。地図をタップして位置を選ぶこともできます。");
     }
+  };
+
+  const handleMapPress = (e: MapPressEvent) => {
+    const { latitude, longitude } = e.nativeEvent.coordinate;
+    setCoords({ lat: latitude, lng: longitude });
+    setStatusText("地図で選んだ場所を自宅として設定しました。");
+  };
+
+  const handleMarkerDragEnd = (coordinate: LatLng) => {
+    setCoords({ lat: coordinate.latitude, lng: coordinate.longitude });
+    setStatusText("ピンの位置を自宅として設定しました。");
   };
 
   const handleSave = async () => {
     if (!coords) {
-      Alert.alert("自宅の位置が未設定です", "「現在地を自宅として設定」を押して、位置を取得してください。");
+      Alert.alert("自宅の位置が未設定です", "地図をタップするか「現在地を自宅として設定」を押して、位置を選んでください。");
       return;
     }
     try {
@@ -68,6 +101,8 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
     }
   };
 
+  const mapCenter = coords ?? FALLBACK_REGION;
+
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.container}>
@@ -78,9 +113,33 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
           自宅を中心とした円の内側にいるとき、家族アプリ上で自動的に「在宅」と判定されます。
         </Text>
 
-        <View style={styles.mapPlaceholder}>
-          <Text style={styles.mapPin}>📍</Text>
-          <Text style={styles.mapCircleLabel}>判定範囲：半径 {radiusM}m</Text>
+        <View style={styles.mapWrap}>
+          <MapView
+            style={styles.map}
+            region={{
+              latitude: mapCenter.lat,
+              longitude: mapCenter.lng,
+              latitudeDelta: 0.01,
+              longitudeDelta: 0.01,
+            }}
+            onPress={handleMapPress}
+          >
+            {coords && (
+              <>
+                <Marker
+                  coordinate={{ latitude: coords.lat, longitude: coords.lng }}
+                  draggable
+                  onDragEnd={(e) => handleMarkerDragEnd(e.nativeEvent.coordinate)}
+                />
+                <Circle
+                  center={{ latitude: coords.lat, longitude: coords.lng }}
+                  radius={radiusM}
+                  strokeColor={colors.accent}
+                  fillColor="rgba(217, 146, 10, 0.16)"
+                />
+              </>
+            )}
+          </MapView>
         </View>
 
         <View style={styles.radiusHeaderRow}>
@@ -132,16 +191,13 @@ const styles = StyleSheet.create({
   container: { padding: spacing.lg },
   header: { ...typography.headlineMd, color: colors.textPrimary, marginBottom: spacing.xs },
   lead: { ...typography.bodyMd, color: colors.textSecondary, marginBottom: spacing.lg },
-  mapPlaceholder: {
-    height: 180,
+  mapWrap: {
+    height: 220,
     borderRadius: radius.lg,
-    backgroundColor: colors.surfaceSand,
-    alignItems: "center",
-    justifyContent: "center",
+    overflow: "hidden",
     marginBottom: spacing.lg,
   },
-  mapPin: { fontSize: 32, marginBottom: spacing.xs },
-  mapCircleLabel: { ...typography.bodySm, color: colors.textSecondary },
+  map: { width: "100%", height: "100%" },
   radiusHeaderRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: spacing.xs },
   label: { ...typography.titleMd, color: colors.textPrimary },
   radiusValue: { ...typography.titleMd, color: colors.accent },
