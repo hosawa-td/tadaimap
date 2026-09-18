@@ -52,5 +52,11 @@ module.exports = {
         },
       ],
     ],
+    extra: {
+      eas: {
+        projectId: "b862872c-c6ef-4fe1-bb5d-06062c165224",
+      },
+    },
+    owner: "h.osawa",
   },
 };
