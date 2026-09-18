@@ -27,6 +27,22 @@ const MEMBERS_COLUMNS = [
   "created_at",
 ] as const;
 
+/**
+ * 環境変数として貼り付けられた秘密鍵の、よくある入力ミスを吸収する。
+ * - 前後に引用符(" や ')がそのまま含まれている場合は取り除く
+ * - 改行が "\n" という文字列のまま渡された場合は、実際の改行に変換する
+ */
+export function normalizePrivateKey(rawKey: string): string {
+  let key = rawKey.trim();
+  if (
+    (key.startsWith('"') && key.endsWith('"')) ||
+    (key.startsWith("'") && key.endsWith("'"))
+  ) {
+    key = key.slice(1, -1);
+  }
+  return key.replace(/\\n/g, "\n");
+}
+
 function toBool(v: unknown): boolean {
   return v === true || v === "TRUE" || v === "true" || v === 1;
 }
@@ -49,7 +65,7 @@ export class SheetsRepository implements Repository {
   constructor(spreadsheetId: string, serviceAccountEmail: string, privateKey: string) {
     const auth = new google.auth.JWT({
       email: serviceAccountEmail,
-      key: privateKey.replace(/\\n/g, "\n"),
+      key: normalizePrivateKey(privateKey),
       scopes: ["https://www.googleapis.com/auth/spreadsheets"],
     });
     this.sheetsApi = google.sheets({ version: "v4", auth });
