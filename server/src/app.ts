@@ -1,8 +1,13 @@
+import dotenv from "dotenv";
+dotenv.config();
+
 import cors from "cors";
 import express, { NextFunction, Request, Response } from "express";
 import { AppError } from "./errors";
 import { Repository } from "./repository";
-import { PushSender } from "./push";
+import { MemoryRepository } from "./repository.memory";
+import { SheetsRepository } from "./repository.sheets";
+import { PushSender, ExpoPushSender } from "./push";
 import { Member, MemberView, PresenceStatus } from "./types";
 import {
   isValidDeviceId,
@@ -261,3 +266,22 @@ async function notifyGroupOfStatusChange(
     targets.map((m) => ({ to: m.pushToken as string, title: "タダイマップ", body }))
   );
 }
+
+function buildProductionRepository(): Repository {
+  const { GOOGLE_SHEET_ID, GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY } = process.env;
+  if (GOOGLE_SHEET_ID && GOOGLE_SERVICE_ACCOUNT_EMAIL && GOOGLE_PRIVATE_KEY) {
+    return new SheetsRepository(GOOGLE_SHEET_ID, GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY);
+  }
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[起動] Googleスプレッドシートの設定(.env)が見つからないため、インメモリの簡易データで起動します。"
+  );
+  return new MemoryRepository();
+}
+
+/**
+ * Vercel(Express向けのゼロコンフィグ実行)向けのデフォルトエクスポート。
+ * ローカル開発でサーバーを起動する場合は index.ts (app.listen) を使う。
+ * テストは名前付きエクスポートの createApp() を使い、依存関係を差し替える。
+ */
+export default createApp(buildProductionRepository(), new ExpoPushSender());
