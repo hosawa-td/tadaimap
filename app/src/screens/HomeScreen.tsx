@@ -1,14 +1,15 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   RefreshControl,
-  SafeAreaView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { useApp } from "../state/AppContext";
 import { formatStatusLine, summaryText } from "../presence";
@@ -18,6 +19,7 @@ import { colors, radius, spacing, typography } from "../theme/tokens";
 export default function HomeScreen() {
   const { members, inviteCode, refreshMembers, setStatus } = useApp();
   const [refreshing, setRefreshing] = useState(false);
+  const [sending, setSending] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -42,10 +44,14 @@ export default function HomeScreen() {
   };
 
   const handleArrivedNow = async () => {
+    setSending(true);
     try {
       await setStatus("home", "manual");
+      Alert.alert("送信しました", "家族に「ただいま」を伝えました。");
     } catch (err) {
       Alert.alert("エラー", err instanceof Error ? err.message : "通知の送信に失敗しました");
+    } finally {
+      setSending(false);
     }
   };
 
@@ -57,8 +63,16 @@ export default function HomeScreen() {
         <Text style={styles.summary}>{summaryText(members)}</Text>
       </View>
 
-      <TouchableOpacity style={styles.arrivedButton} onPress={handleArrivedNow}>
-        <Text style={styles.arrivedButtonText}>「ただいま！」を送る</Text>
+      <TouchableOpacity
+        style={[styles.arrivedButton, sending && styles.arrivedButtonDisabled]}
+        onPress={handleArrivedNow}
+        disabled={sending}
+      >
+        {sending ? (
+          <ActivityIndicator color={colors.onAccent} />
+        ) : (
+          <Text style={styles.arrivedButtonText}>「ただいま！」を送る</Text>
+        )}
       </TouchableOpacity>
 
       <FlatList
@@ -113,6 +127,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: spacing.md,
   },
+  arrivedButtonDisabled: { opacity: 0.6 },
   arrivedButtonText: { color: colors.onAccent, ...typography.labelLg, fontSize: 15 },
   list: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl, gap: spacing.sm },
   empty: { ...typography.bodyMd, color: colors.textFaint, textAlign: "center", marginTop: spacing.xl },

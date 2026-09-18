@@ -1,5 +1,6 @@
 import React from "react";
 import { View } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
@@ -65,11 +66,13 @@ function RootNavigator() {
 
 export default function App() {
   return (
-    <AppProvider>
-      <StatusBar style="dark" />
-      <NavigationContainer>
-        <RootNavigator />
-      </NavigationContainer>
-    </AppProvider>
+    <SafeAreaProvider>
+      <AppProvider>
+        <StatusBar style="dark" />
+        <NavigationContainer>
+          <RootNavigator />
+        </NavigationContainer>
+      </AppProvider>
+    </SafeAreaProvider>
   );
 }
