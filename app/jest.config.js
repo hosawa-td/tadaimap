@@ -3,6 +3,6 @@ module.exports = {
   testEnvironment: "node",
   testMatch: ["**/tests/**/*.test.ts"],
   transform: {
-    "^.+\\.ts$": ["ts-jest", { isolatedModules: true }],
+    "^.+\\.ts$": "ts-jest",
   },
 };

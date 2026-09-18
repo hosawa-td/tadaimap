@@ -4,7 +4,10 @@
     "strict": true,
     "jsx": "react-native",
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "rootDir": ".",
+    "isolatedModules": true,
+    "types": ["jest", "node"]
   },
-  "include": ["src", "App.tsx"]
+  "include": ["src", "App.tsx", "tests"]
 }
