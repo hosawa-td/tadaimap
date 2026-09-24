@@ -103,6 +103,7 @@
     <p class="lead" id="home-sub">招待コード ------</p>
 
     <button class="btn btn-accent" id="arrived-btn">「ただいま！」を送る</button>
+    <p class="hint" id="status-hint" style="text-align:center;">自動では切り替わりません。外出するとき・帰宅したときに、その都度このボタンを押してください。</p>
 
     <div id="member-list" style="margin-top:18px;"></div>
 
@@ -262,6 +263,21 @@
     el("home-count").textContent = "現在" + home + "/" + members.length + "人 在宅中";
   }
 
+  var myStatus = "away";
+
+  function updateArrivedButton() {
+    var btn = el("arrived-btn");
+    if (myStatus === "home") {
+      btn.textContent = "「いってきます」を送る";
+      btn.classList.remove("btn-accent");
+      btn.classList.add("btn-outline");
+    } else {
+      btn.textContent = "「ただいま！」を送る";
+      btn.classList.remove("btn-outline");
+      btn.classList.add("btn-accent");
+    }
+  }
+
   async function loadHome() {
     var groupId = storageGet(STORAGE.groupId);
     if (!groupId) return;
@@ -272,6 +288,8 @@
       var me = result.members.find(function (m) { return m.isMe; });
       if (me) {
         el("switch-showname").classList.toggle("on", me.nameOrAnonymous !== "メンバー");
+        myStatus = me.status;
+        updateArrivedButton();
       }
     } catch (err) {
       showToast(err.message);
@@ -281,9 +299,10 @@
   el("arrived-btn").addEventListener("click", async function () {
     var memberId = storageGet(STORAGE.memberId);
     if (!memberId) return;
+    var nextStatus = myStatus === "home" ? "away" : "home";
     try {
-      await api("/members/" + memberId + "/status", { method: "PATCH", body: { deviceId: deviceId, status: "home", source: "manual" } });
-      showToast("家族に「ただいま」を伝えました");
+      await api("/members/" + memberId + "/status", { method: "PATCH", body: { deviceId: deviceId, status: nextStatus, source: "manual" } });
+      showToast(nextStatus === "home" ? "家族に「ただいま」を伝えました" : "家族に「いってきます」を伝えました");
       loadHome();
     } catch (err) {
       showToast(err.message);
