@@ -16,6 +16,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../../App";
 import { useApp } from "../state/AppContext";
 import { colors, radius, spacing, typography } from "../theme/tokens";
+import { NEARBY_LABEL_MAX_LENGTH } from "../validation";
 
 export default function SettingsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -24,6 +25,8 @@ export default function SettingsScreen() {
     showName,
     notifyEnabled,
     homeRadiusM,
+    buildingRadiusM,
+    nearbyLabel,
     inviteCode,
     saveProfile,
     setNotifyEnabled,
@@ -32,7 +35,22 @@ export default function SettingsScreen() {
   } = useApp();
 
   const [nameDraft, setNameDraft] = useState(myName);
+  const [nearbyLabelDraft, setNearbyLabelDraft] = useState(nearbyLabel);
   const [copied, setCopied] = useState(false);
+
+  const handleNearbyLabelBlur = async () => {
+    const trimmed = nearbyLabelDraft.trim();
+    if (trimmed.length === 0) {
+      setNearbyLabelDraft(nearbyLabel);
+      return;
+    }
+    if (trimmed === nearbyLabel) return;
+    try {
+      await saveProfile({ nearbyLabel: trimmed });
+    } catch {
+      Alert.alert("エラー", "呼び方の変更に失敗しました");
+    }
+  };
 
   const handleNameBlur = async () => {
     if (nameDraft.trim().length === 0 || nameDraft === myName) return;
@@ -118,6 +136,22 @@ export default function SettingsScreen() {
             </View>
             <Switch value={showName} onValueChange={handleToggleShowName} />
           </View>
+          <View style={styles.divider} />
+          <View style={styles.row}>
+            <View style={styles.rowTextBlock}>
+              <Text style={styles.rowTitle}>近くにいるときの呼び方</Text>
+              <Text style={styles.rowSub}>
+                自宅の範囲外・施設内の範囲内にいるときに表示される名前です（例：施設内、ロビー）
+              </Text>
+            </View>
+            <TextInput
+              style={styles.nameInput}
+              value={nearbyLabelDraft}
+              onChangeText={setNearbyLabelDraft}
+              onBlur={handleNearbyLabelBlur}
+              maxLength={NEARBY_LABEL_MAX_LENGTH}
+            />
+          </View>
         </View>
 
         <Text style={styles.sectionTitle}>自宅の設定</Text>
@@ -128,7 +162,9 @@ export default function SettingsScreen() {
           <View style={styles.row}>
             <View style={styles.rowTextBlock}>
               <Text style={styles.rowTitle}>自宅の位置・判定範囲</Text>
-              <Text style={styles.rowSub}>現在：半径 {homeRadiusM}m</Text>
+              <Text style={styles.rowSub}>
+                現在：半径 {homeRadiusM}m（施設内は {buildingRadiusM}m まで）
+              </Text>
             </View>
             <Text style={styles.chevron}>›</Text>
           </View>

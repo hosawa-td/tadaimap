@@ -12,6 +12,8 @@ export const colors = {
   onAccent: "#FFFFFF",
   home: "#4A7C59",
   homeSoft: "rgba(74, 124, 89, 0.12)",
+  nearby: "#B9770E",
+  nearbySoft: "rgba(217, 146, 10, 0.14)",
   away: "#7D8A99",
   awaySoft: "rgba(125, 138, 153, 0.15)",
   textPrimary: "#1D1C17",

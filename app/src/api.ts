@@ -1,4 +1,4 @@
-export type PresenceStatus = "home" | "away";
+export type PresenceStatus = "home" | "nearby" | "away";
 
 export interface MemberView {
   memberId: string;
@@ -6,6 +6,7 @@ export interface MemberView {
   isMe: boolean;
   status: PresenceStatus;
   statusUpdatedAt: string;
+  nearbyLabel: string;
 }
 
 export interface ApiErrorBody {
@@ -81,10 +82,16 @@ export class ApiClient {
     return this.request(`/groups/${groupId}/members`, { method: "GET" });
   }
 
-  updateHome(memberId: string, homeLat: number, homeLng: number, homeRadiusM: number): Promise<{ ok: true }> {
+  updateHome(
+    memberId: string,
+    homeLat: number,
+    homeLng: number,
+    homeRadiusM: number,
+    buildingRadiusM: number
+  ): Promise<{ ok: true }> {
     return this.request(`/members/${memberId}/home`, {
       method: "PATCH",
-      body: { deviceId: this.deviceId, homeLat, homeLng, homeRadiusM },
+      body: { deviceId: this.deviceId, homeLat, homeLng, homeRadiusM, buildingRadiusM },
     });
   }
 
@@ -95,7 +102,10 @@ export class ApiClient {
     });
   }
 
-  updateProfile(memberId: string, fields: { name?: string; showName?: boolean }): Promise<{ ok: true }> {
+  updateProfile(
+    memberId: string,
+    fields: { name?: string; showName?: boolean; nearbyLabel?: string }
+  ): Promise<{ ok: true }> {
     return this.request(`/members/${memberId}/profile`, {
       method: "PATCH",
       body: { deviceId: this.deviceId, ...fields },

@@ -7,9 +7,17 @@ export function formatTime(iso: string): string {
   return `${hh}:${mm}`;
 }
 
+export function statusLabel(member: MemberView): string {
+  if (member.status === "home") return "在宅";
+  if (member.status === "nearby") return member.nearbyLabel;
+  return "外出中";
+}
+
 export function formatStatusLine(member: MemberView): string {
   const time = formatTime(member.statusUpdatedAt);
-  return member.status === "home" ? `在宅 · ${time}に帰宅` : `外出中 · ${time}に外出`;
+  if (member.status === "home") return `在宅 · ${time}に帰宅`;
+  if (member.status === "nearby") return `${member.nearbyLabel} · ${time}から`;
+  return `外出中 · ${time}に外出`;
 }
 
 export function countHome(members: MemberView[]): { home: number; total: number } {

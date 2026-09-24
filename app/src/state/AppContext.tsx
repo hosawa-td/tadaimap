@@ -9,8 +9,15 @@ import React, {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ApiClient, MemberView, PresenceStatus } from "../api";
 import { getOrCreateDeviceId } from "../deviceId";
-import { clearMembership, loadMembership, saveMembership, STORAGE_KEYS } from "../storage";
-import { RADIUS_DEFAULT } from "../validation";
+import {
+  clearMembership,
+  loadHomeGeofenceConfig,
+  loadMembership,
+  saveHomeGeofenceConfig,
+  saveMembership,
+  STORAGE_KEYS,
+} from "../storage";
+import { BUILDING_RADIUS_DEFAULT, NEARBY_LABEL_DEFAULT, RADIUS_DEFAULT } from "../validation";
 import { registerForPushNotifications, subscribeToNotifications } from "../notifications";
 import { startHomeGeofence, stopHomeGeofence } from "../location";
 
@@ -26,6 +33,8 @@ interface AppContextValue {
   showName: boolean;
   notifyEnabled: boolean;
   homeRadiusM: number;
+  buildingRadiusM: number;
+  nearbyLabel: string;
   inviteCode: string | null;
   members: MemberView[];
   loading: boolean;
@@ -34,9 +43,9 @@ interface AppContextValue {
   createGroup: (name: string) => Promise<{ inviteCode: string }>;
   joinGroup: (inviteCode: string, name: string) => Promise<void>;
   refreshMembers: () => Promise<void>;
-  saveHome: (lat: number, lng: number, radiusM: number) => Promise<void>;
+  saveHome: (lat: number, lng: number, homeRadiusM: number, buildingRadiusM: number) => Promise<void>;
   setStatus: (status: PresenceStatus, source: "auto" | "manual") => Promise<void>;
-  saveProfile: (fields: { name?: string; showName?: boolean }) => Promise<void>;
+  saveProfile: (fields: { name?: string; showName?: boolean; nearbyLabel?: string }) => Promise<void>;
   setNotifyEnabled: (value: boolean) => Promise<void>;
   refreshInviteCode: () => Promise<string>;
   leaveGroup: () => Promise<void>;
@@ -53,6 +62,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [showName, setShowNameState] = useState(true);
   const [notifyEnabled, setNotifyEnabledState] = useState(true);
   const [homeRadiusM, setHomeRadiusM] = useState(RADIUS_DEFAULT);
+  const [buildingRadiusM, setBuildingRadiusM] = useState(BUILDING_RADIUS_DEFAULT);
+  const [nearbyLabel, setNearbyLabelState] = useState(NEARBY_LABEL_DEFAULT);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [members, setMembers] = useState<MemberView[]>([]);
   const [loading, setLoading] = useState(false);
@@ -69,6 +80,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setGroupId(stored.groupId);
         setMemberId(stored.memberId);
         setMyName(stored.myName ?? "");
+      }
+      const geofenceConfig = await loadHomeGeofenceConfig();
+      if (geofenceConfig) {
+        setHomeRadiusM(geofenceConfig.homeRadiusM);
+        setBuildingRadiusM(geofenceConfig.buildingRadiusM);
       }
       setReady(true);
     })();
@@ -92,6 +108,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const result = await api.getMembers(groupId);
     setInviteCode(result.inviteCode);
     setMembers(result.members);
+    const me = result.members.find((m) => m.isMe);
+    if (me) setNearbyLabelState(me.nearbyLabel);
   }, [api, groupId]);
 
   useEffect(() => {
@@ -134,14 +152,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const saveHome = useCallback(
-    async (lat: number, lng: number, radiusM: number) => {
+    async (lat: number, lng: number, homeRadiusMValue: number, buildingRadiusMValue: number) => {
       if (!api || !memberId) return;
       await withLoading(async () => {
-        await api.updateHome(memberId, lat, lng, radiusM);
-        setHomeRadiusM(radiusM);
-        await AsyncStorage.setItem(STORAGE_KEYS.homeRadiusM, String(radiusM));
+        await api.updateHome(memberId, lat, lng, homeRadiusMValue, buildingRadiusMValue);
+        setHomeRadiusM(homeRadiusMValue);
+        setBuildingRadiusM(buildingRadiusMValue);
+        await saveHomeGeofenceConfig({
+          lat,
+          lng,
+          homeRadiusM: homeRadiusMValue,
+          buildingRadiusM: buildingRadiusMValue,
+        });
         try {
-          await startHomeGeofence(lat, lng, radiusM);
+          await startHomeGeofence(lat, lng, homeRadiusMValue, buildingRadiusMValue);
         } catch (err) {
           // 位置情報の権限が無い場合などは自動判定を諦め、手動更新にフォールバックする
           // eslint-disable-next-line no-console
@@ -164,14 +188,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const saveProfile = useCallback(
-    async (fields: { name?: string; showName?: boolean }) => {
+    async (fields: { name?: string; showName?: boolean; nearbyLabel?: string }) => {
       if (!api || !memberId) return;
       // 画面のスイッチ/入力欄がすぐに反映されるよう、通信の結果を待たず先に表示を更新する
       // (通信が失敗した場合は元の値に戻す)
       const previousName = myName;
       const previousShowName = showName;
+      const previousNearbyLabel = nearbyLabel;
       if (fields.name !== undefined) setMyName(fields.name);
       if (fields.showName !== undefined) setShowNameState(fields.showName);
+      if (fields.nearbyLabel !== undefined) setNearbyLabelState(fields.nearbyLabel);
       try {
         await withLoading(async () => {
           await api.updateProfile(memberId, fields);
@@ -180,10 +206,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       } catch (err) {
         setMyName(previousName);
         setShowNameState(previousShowName);
+        setNearbyLabelState(previousNearbyLabel);
         throw err;
       }
     },
-    [api, memberId, myName, showName, refreshMembers, withLoading]
+    [api, memberId, myName, showName, nearbyLabel, refreshMembers, withLoading]
   );
 
   const setNotifyEnabled = useCallback(
@@ -244,6 +271,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     showName,
     notifyEnabled,
     homeRadiusM,
+    buildingRadiusM,
+    nearbyLabel,
     inviteCode,
     members,
     loading,

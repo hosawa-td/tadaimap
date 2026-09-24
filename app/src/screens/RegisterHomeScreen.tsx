@@ -15,7 +15,14 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../../App";
 import { useApp } from "../state/AppContext";
 import { getCurrentLocation, requestLocationPermissions } from "../location";
-import { RADIUS_DEFAULT, RADIUS_MAX, RADIUS_MIN } from "../validation";
+import {
+  BUILDING_RADIUS_DEFAULT,
+  BUILDING_RADIUS_MAX,
+  BUILDING_RADIUS_MIN,
+  RADIUS_DEFAULT,
+  RADIUS_MAX,
+  RADIUS_MIN,
+} from "../validation";
 import { colors, radius, spacing, typography } from "../theme/tokens";
 
 type Props = NativeStackScreenProps<RootStackParamList, "RegisterHome">;
@@ -25,9 +32,12 @@ const FALLBACK_REGION = { lat: 35.681236, lng: 139.767125 };
 
 export default function RegisterHomeScreen({ navigation, route }: Props) {
   const fromSettings = route.params?.fromSettings ?? false;
-  const { saveHome, homeRadiusM, loading } = useApp();
+  const { saveHome, homeRadiusM, buildingRadiusM, loading } = useApp();
 
   const [radiusM, setRadiusM] = useState(fromSettings ? homeRadiusM : RADIUS_DEFAULT);
+  const [buildingRadiusMValue, setBuildingRadiusMValue] = useState(
+    fromSettings ? buildingRadiusM : BUILDING_RADIUS_DEFAULT
+  );
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [statusText, setStatusText] = useState(
     fromSettings
@@ -84,13 +94,20 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
     setStatusText("ピンの位置を自宅として設定しました。");
   };
 
+  const handleRadiusChange = (value: number) => {
+    setRadiusM(value);
+    // 施設の範囲は自宅の範囲より必ず広くする
+    const minBuilding = Math.max(value, BUILDING_RADIUS_MIN);
+    setBuildingRadiusMValue((prev) => (prev < minBuilding ? minBuilding : prev));
+  };
+
   const handleSave = async () => {
     if (!coords) {
       Alert.alert("自宅の位置が未設定です", "地図をタップするか「現在地を自宅として設定」を押して、位置を選んでください。");
       return;
     }
     try {
-      await saveHome(coords.lat, coords.lng, radiusM);
+      await saveHome(coords.lat, coords.lng, radiusM, buildingRadiusMValue);
       if (fromSettings) {
         navigation.goBack();
       } else {
@@ -133,6 +150,12 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
                 />
                 <Circle
                   center={{ latitude: coords.lat, longitude: coords.lng }}
+                  radius={buildingRadiusMValue}
+                  strokeColor={colors.nearby}
+                  fillColor="rgba(217, 146, 10, 0.08)"
+                />
+                <Circle
+                  center={{ latitude: coords.lat, longitude: coords.lng }}
                   radius={radiusM}
                   strokeColor={colors.accent}
                   fillColor="rgba(217, 146, 10, 0.16)"
@@ -151,7 +174,7 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
           maximumValue={RADIUS_MAX}
           step={10}
           value={radiusM}
-          onValueChange={setRadiusM}
+          onValueChange={handleRadiusChange}
           minimumTrackTintColor={colors.accent}
           maximumTrackTintColor={colors.border}
           thumbTintColor={colors.accent}
@@ -163,6 +186,29 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
 
         <Text style={styles.hint}>
           広すぎると近所でも「在宅」扱いになり、狭すぎると建物内のGPS誤差で「不在」に切り替わる場合があります。戸建やマンションでは100m〜150mが最適です。
+        </Text>
+
+        <View style={styles.radiusHeaderRow}>
+          <Text style={styles.label}>マンション内など「近くにいる」と判定する範囲</Text>
+          <Text style={[styles.radiusValue, { color: colors.nearby }]}>{buildingRadiusMValue}m</Text>
+        </View>
+        <Slider
+          minimumValue={Math.max(RADIUS_MIN, BUILDING_RADIUS_MIN, radiusM)}
+          maximumValue={BUILDING_RADIUS_MAX}
+          step={10}
+          value={buildingRadiusMValue}
+          onValueChange={setBuildingRadiusMValue}
+          minimumTrackTintColor={colors.nearby}
+          maximumTrackTintColor={colors.border}
+          thumbTintColor={colors.nearby}
+        />
+        <View style={styles.radiusScaleRow}>
+          <Text style={styles.scaleText}>{Math.max(RADIUS_MIN, BUILDING_RADIUS_MIN, radiusM)}m（狭い）</Text>
+          <Text style={styles.scaleText}>2000m（広い）</Text>
+        </View>
+
+        <Text style={styles.hint}>
+          自宅の範囲より外側でも、この範囲の中にいれば「同じ建物内にいる」として家族に知らせます。マンションの別の階や、隣接する建物まで含めたい場合は広めに設定してください。
         </Text>
 
         <TouchableOpacity style={styles.outlineButton} onPress={handleUseCurrentLocation}>
