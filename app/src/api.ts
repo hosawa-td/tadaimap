@@ -7,6 +7,7 @@ export interface MemberView {
   status: PresenceStatus;
   statusUpdatedAt: string;
   nearbyLabel: string;
+  isAdmin: boolean;
 }
 
 export interface ApiErrorBody {

@@ -5,7 +5,7 @@ import path from "path";
 import cors from "cors";
 import express, { NextFunction, Request, Response } from "express";
 import { AppError } from "./errors";
-import { Repository } from "./repository";
+import { isEffectiveAdmin, Repository } from "./repository";
 import { MemoryRepository } from "./repository.memory";
 import { SheetsRepository } from "./repository.sheets";
 import { PushSender, ExpoPushSender } from "./push";
@@ -27,7 +27,7 @@ function getDeviceId(req: Request): string | undefined {
   return fromBody ?? fromHeader ?? undefined;
 }
 
-function toMemberView(member: Member, requesterDeviceId: string | undefined): MemberView {
+function toMemberView(member: Member, requesterDeviceId: string | undefined, groupMembers: Member[]): MemberView {
   const isMe = member.deviceId === requesterDeviceId;
   const nameOrAnonymous = isMe || member.showName ? member.name : "メンバー";
   return {
@@ -37,6 +37,7 @@ function toMemberView(member: Member, requesterDeviceId: string | undefined): Me
     status: member.status,
     statusUpdatedAt: member.statusUpdatedAt,
     nearbyLabel: member.nearbyLabel,
+    isAdmin: isEffectiveAdmin(member, groupMembers),
   };
 }
 
@@ -110,7 +111,7 @@ export function createApp(repository: Repository, pushSender: PushSender) {
       const members = await repository.getMembersByGroup(groupId);
       res.status(200).json({
         inviteCode: group.inviteCode,
-        members: members.map((m) => toMemberView(m, deviceId)),
+        members: members.map((m) => toMemberView(m, deviceId, members)),
       });
     })
   );

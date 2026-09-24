@@ -50,6 +50,19 @@ describe("GET /groups/:groupId/members", () => {
     expect(other.isMe).toBe(false);
     expect(other.nameOrAnonymous).toBe("メンバー");
   });
+
+  it("グループを作成した人だけがisAdmin=trueになる", async () => {
+    const { app, groupId, memberIdA, memberIdB } = await setupGroupWithTwoMembers();
+
+    const res = await request(app)
+      .get(`/groups/${groupId}/members`)
+      .set("x-device-id", "dev-1");
+
+    const admin = res.body.members.find((m: any) => m.memberId === memberIdA);
+    const other = res.body.members.find((m: any) => m.memberId === memberIdB);
+    expect(admin.isAdmin).toBe(true);
+    expect(other.isAdmin).toBe(false);
+  });
 });
 
 describe("PATCH /members/:memberId/home", () => {
@@ -155,6 +168,33 @@ describe("PATCH /members/:memberId/status", () => {
       .send({ deviceId: "dev-1", status: "unknown" });
 
     expect(res.status).toBe(400);
+  });
+
+  it("管理者は他のメンバーの状態を代わりに変更できる", async () => {
+    const { app, groupId, memberIdA, memberIdB } = await setupGroupWithTwoMembers();
+
+    const res = await request(app)
+      .patch(`/members/${memberIdB}/status`)
+      .send({ deviceId: "dev-1", status: "home" });
+
+    expect(res.status).toBe(200);
+
+    const list = await request(app)
+      .get(`/groups/${groupId}/members`)
+      .set("x-device-id", "dev-1");
+    const memberB = list.body.members.find((m: any) => m.memberId === memberIdB);
+    expect(memberB.status).toBe("home");
+  });
+
+  it("管理者以外は他のメンバーの状態を変更できずFORBIDDENになる", async () => {
+    const { app, memberIdA, memberIdB } = await setupGroupWithTwoMembers();
+
+    const res = await request(app)
+      .patch(`/members/${memberIdA}/status`)
+      .send({ deviceId: "dev-2", status: "home" });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe("FORBIDDEN");
   });
 });
 

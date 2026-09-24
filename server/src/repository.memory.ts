@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { AppError } from "./errors";
 import {
+  isEffectiveAdmin,
   Repository,
   generateInviteCode,
   inviteCodeExpiryFrom,
@@ -40,6 +41,7 @@ export class MemoryRepository implements Repository {
       notifyEnabled: true,
       pushToken: null,
       createdAt: now.toISOString(),
+      isAdmin: true,
     };
     this.groups.set(group.groupId, group);
     this.members.set(member.memberId, member);
@@ -80,6 +82,7 @@ export class MemoryRepository implements Repository {
       notifyEnabled: true,
       pushToken: null,
       createdAt: now.toISOString(),
+      isAdmin: false,
     };
     this.members.set(member.memberId, member);
     return { group, member };
@@ -124,7 +127,7 @@ export class MemoryRepository implements Repository {
     deviceId: string,
     status: PresenceStatus
   ): Promise<Member> {
-    const member = this.requireOwnedMember(memberId, deviceId);
+    const member = await this.requireStatusPermission(memberId, deviceId);
     member.status = status;
     member.statusUpdatedAt = new Date().toISOString();
     return member;
@@ -196,6 +199,26 @@ export class MemoryRepository implements Repository {
     }
     if (member.deviceId !== deviceId) {
       throw new AppError("FORBIDDEN", "このメンバー情報を操作する権限がありません");
+    }
+    return member;
+  }
+
+  /**
+   * 状態(status)は本人に加えて、同じグループの管理者からも変更できる
+   * (「管理者は参加者の状態設定を手動で変更もできる」という要件のため)。
+   */
+  private async requireStatusPermission(memberId: string, requesterDeviceId: string): Promise<Member> {
+    const member = this.members.get(memberId);
+    if (!member) {
+      throw new AppError("NOT_FOUND", "メンバーが見つかりません");
+    }
+    if (member.deviceId === requesterDeviceId) {
+      return member;
+    }
+    const requester = await this.getMemberByDeviceId(requesterDeviceId);
+    const groupMembers = await this.getMembersByGroup(member.groupId);
+    if (!requester || requester.groupId !== member.groupId || !isEffectiveAdmin(requester, groupMembers)) {
+      throw new AppError("FORBIDDEN", "このメンバーの状態を変更する権限がありません");
     }
     return member;
   }

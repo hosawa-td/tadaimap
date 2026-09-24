@@ -25,6 +25,8 @@ export interface Member {
   notifyEnabled: boolean;
   pushToken: string | null;
   createdAt: string; // ISO8601
+  /** グループを作成した人が管理者。管理者は他のメンバーの状態も手動で変更できる。 */
+  isAdmin: boolean;
 }
 
 export interface MemberView {
@@ -35,4 +37,6 @@ export interface MemberView {
   statusUpdatedAt: string;
   /** status が "nearby" の場合に表示すべきラベル(本人が設定した呼び方)。 */
   nearbyLabel: string;
+  /** このメンバーが管理者かどうか(管理者は家族一覧で分かるようにする)。 */
+  isAdmin: boolean;
 }

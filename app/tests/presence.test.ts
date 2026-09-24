@@ -9,6 +9,7 @@ function member(overrides: Partial<MemberView>): MemberView {
     status: "home",
     statusUpdatedAt: "2026-01-01T05:32:00.000Z",
     nearbyLabel: "施設内",
+    isAdmin: false,
     ...overrides,
   };
 }

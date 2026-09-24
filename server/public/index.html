@@ -15,6 +15,8 @@
     --on-accent:#FFFFFF;
     --home:#4A7C59;
     --home-soft:rgba(74,124,89,0.12);
+    --nearby:#B9770E;
+    --nearby-soft:rgba(217,146,10,0.14);
     --away:#7D8A99;
     --away-soft:rgba(125,138,153,0.15);
     --text:#1D1C17;
@@ -58,10 +60,24 @@
   .info{flex:1;min-width:0;}
   .name-row{display:flex;align-items:center;gap:6px;font-weight:700;font-size:14.5px;}
   .me-tag{font-size:10px;font-weight:700;color:var(--text-faint);background:var(--surface-sand);border-radius:6px;padding:1px 6px;}
+  .admin-tag{font-size:10px;font-weight:700;color:var(--home);background:var(--home-soft);border-radius:6px;padding:1px 6px;}
   .time{font-size:12px;color:var(--text-faint);margin-top:2px;}
   .status{flex:none;font-size:12px;font-weight:700;padding:6px 11px;border-radius:100px;}
   .status.home{background:var(--home-soft);color:var(--home);}
+  .status.nearby{background:var(--nearby-soft);color:var(--nearby);}
   .status.away{background:var(--away-soft);color:var(--away);}
+  .card.clickable{cursor:pointer;}
+  .status-switch{display:flex;gap:8px;margin:18px 0 6px;}
+  .status-switch button{flex:1;padding:12px 6px;border-radius:100px;border:1.5px solid var(--border);background:var(--surface);font-size:13px;font-weight:700;color:var(--text-muted);cursor:pointer;}
+  .status-switch button.active-home{border-color:var(--home);color:var(--home);background:var(--home-soft);}
+  .status-switch button.active-nearby{border-color:var(--nearby);color:var(--nearby);background:var(--nearby-soft);}
+  .status-switch button.active-away{border-color:var(--away);color:var(--away);background:var(--away-soft);}
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-end;justify-content:center;z-index:50;}
+  .modal-card{background:var(--surface);width:100%;max-width:480px;border-radius:20px 20px 0 0;padding:20px 20px calc(20px + env(safe-area-inset-bottom, 0px));}
+  .modal-title{font-size:16px;font-weight:700;margin:0 0 4px;}
+  .modal-sub{font-size:12.5px;color:var(--text-faint);margin:0 0 16px;line-height:1.6;}
+  .modal-btn{display:block;width:100%;text-align:left;padding:14px 16px;border-radius:12px;border:none;background:var(--surface-sand);font-size:14.5px;font-weight:600;color:var(--text);margin-bottom:8px;cursor:pointer;}
+  .modal-cancel{background:transparent;color:var(--text-faint);text-align:center;font-weight:700;margin-top:4px;}
   .section-title{font-size:11.5px;font-weight:700;color:var(--text-faint);letter-spacing:.04em;margin:24px 4px 8px;text-transform:uppercase;}
   .settings-card{background:var(--surface);border-radius:16px;padding:14px;margin-bottom:10px;}
   .row{display:flex;align-items:center;justify-content:space-between;gap:10px;}
@@ -102,10 +118,15 @@
     <h1 id="home-count">-</h1>
     <p class="lead" id="home-sub">招待コード ------</p>
 
-    <button class="btn btn-accent" id="arrived-btn">「ただいま！」を送る</button>
-    <p class="hint" id="status-hint" style="text-align:center;">自動では切り替わりません。外出するとき・帰宅したときに、その都度このボタンを押してください。</p>
+    <div class="status-switch" id="status-switch">
+      <button type="button" data-status="home">在宅</button>
+      <button type="button" data-status="nearby" id="status-switch-nearby">施設内</button>
+      <button type="button" data-status="away">外出中</button>
+    </div>
+    <p class="hint" id="status-hint" style="text-align:center;">自動では切り替わりません。状態が変わったときに、その都度ボタンを押してください。</p>
 
     <div id="member-list" style="margin-top:18px;"></div>
+    <p class="hint" id="admin-hint" style="text-align:center;" hidden>管理者として、家族の名前をタップすると代わりに状態を変更できます</p>
 
     <div class="section-title">設定</div>
     <div class="settings-card">
@@ -122,6 +143,13 @@
         </div>
         <div class="switch on" id="switch-showname"><div class="knob"></div></div>
       </div>
+      <div class="row">
+        <div>
+          <div class="row-title">近くにいるときの呼び方</div>
+          <div class="row-sub">自宅の外・施設内の範囲内にいるときの表示名です</div>
+        </div>
+        <input type="text" id="settings-nearby-label" maxlength="12" style="text-align:right;border:none;background:transparent;font-weight:600;font-size:14px;color:var(--text);width:100px;">
+      </div>
     </div>
 
     <button class="btn btn-danger" id="leave-btn">このブラウザをグループから外す</button>
@@ -129,6 +157,17 @@
   </section>
 
   <div class="toast" id="toast"></div>
+
+  <div class="modal-overlay" id="status-modal" hidden>
+    <div class="modal-card">
+      <p class="modal-title" id="status-modal-title">状態を変更</p>
+      <p class="modal-sub">管理者として、この家族の状態を代わりに変更できます。</p>
+      <button type="button" class="modal-btn" data-status="home">在宅にする</button>
+      <button type="button" class="modal-btn" id="status-modal-nearby" data-status="nearby">施設内にする</button>
+      <button type="button" class="modal-btn" data-status="away">外出中にする</button>
+      <button type="button" class="modal-btn modal-cancel" id="status-modal-cancel">キャンセル</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -242,6 +281,18 @@
   });
 
   // ---------- Home view ----------
+  var STATUS_LABEL = { home: "在宅", away: "外出中" };
+
+  function statusLabel(m) {
+    return m.status === "nearby" ? m.nearbyLabel : STATUS_LABEL[m.status];
+  }
+
+  function statusLine(m) {
+    if (m.status === "home") return "在宅 · " + formatTime(m.statusUpdatedAt) + "に帰宅";
+    if (m.status === "nearby") return m.nearbyLabel + " · " + formatTime(m.statusUpdatedAt) + "から";
+    return "外出中 · " + formatTime(m.statusUpdatedAt) + "に外出";
+  }
+
   function renderMembers(members) {
     var list = el("member-list");
     list.innerHTML = "";
@@ -249,33 +300,39 @@
     members.forEach(function (m) {
       if (m.status === "home") home++;
       var card = document.createElement("div");
-      card.className = "card";
+      var clickable = amIAdmin && !m.isMe;
+      card.className = "card" + (clickable ? " clickable" : "");
       var initial = m.nameOrAnonymous.slice(0, 1);
       card.innerHTML =
         '<div class="avatar' + (m.isMe || m.nameOrAnonymous !== "メンバー" ? "" : " anon") + '">' + initial + "</div>" +
         '<div class="info">' +
-          '<div class="name-row">' + m.nameOrAnonymous + (m.isMe ? ' <span class="me-tag">あなた</span>' : "") + "</div>" +
-          '<div class="time">' + (m.status === "home" ? "在宅 · " + formatTime(m.statusUpdatedAt) + "に帰宅" : "外出中 · " + formatTime(m.statusUpdatedAt) + "に外出") + "</div>" +
+          '<div class="name-row">' + m.nameOrAnonymous +
+            (m.isMe ? ' <span class="me-tag">あなた</span>' : "") +
+            (m.isAdmin ? ' <span class="admin-tag">管理者</span>' : "") +
+          "</div>" +
+          '<div class="time">' + statusLine(m) + "</div>" +
         "</div>" +
-        '<div class="status ' + m.status + '">' + (m.status === "home" ? "在宅" : "外出中") + "</div>";
+        '<div class="status ' + m.status + '">' + statusLabel(m) + "</div>";
+      if (clickable) {
+        card.addEventListener("click", function () { openStatusModal(m); });
+      }
       list.appendChild(card);
     });
     el("home-count").textContent = "現在" + home + "/" + members.length + "人 在宅中";
   }
 
   var myStatus = "away";
+  var myNearbyLabel = "施設内";
+  var amIAdmin = false;
 
-  function updateArrivedButton() {
-    var btn = el("arrived-btn");
-    if (myStatus === "home") {
-      btn.textContent = "「いってきます」を送る";
-      btn.classList.remove("btn-accent");
-      btn.classList.add("btn-outline");
-    } else {
-      btn.textContent = "「ただいま！」を送る";
-      btn.classList.remove("btn-outline");
-      btn.classList.add("btn-accent");
-    }
+  function updateStatusSwitch() {
+    el("status-switch-nearby").textContent = myNearbyLabel;
+    Array.prototype.forEach.call(el("status-switch").querySelectorAll("button"), function (btn) {
+      btn.classList.remove("active-home", "active-nearby", "active-away");
+      if (btn.dataset.status === myStatus) {
+        btn.classList.add("active-" + myStatus);
+      }
+    });
   }
 
   async function loadHome() {
@@ -284,29 +341,73 @@
     try {
       var result = await api("/groups/" + groupId + "/members");
       el("home-sub").textContent = "招待コード " + result.inviteCode;
-      renderMembers(result.members);
       var me = result.members.find(function (m) { return m.isMe; });
       if (me) {
-        el("switch-showname").classList.toggle("on", me.nameOrAnonymous !== "メンバー");
+        amIAdmin = !!me.isAdmin;
         myStatus = me.status;
-        updateArrivedButton();
+        myNearbyLabel = me.nearbyLabel;
+      }
+      renderMembers(result.members);
+      el("admin-hint").hidden = !amIAdmin;
+      if (me) {
+        el("switch-showname").classList.toggle("on", me.nameOrAnonymous !== "メンバー");
+        if (document.activeElement !== el("settings-nearby-label")) {
+          el("settings-nearby-label").value = myNearbyLabel;
+        }
+        updateStatusSwitch();
       }
     } catch (err) {
       showToast(err.message);
     }
   }
 
-  el("arrived-btn").addEventListener("click", async function () {
-    var memberId = storageGet(STORAGE.memberId);
-    if (!memberId) return;
-    var nextStatus = myStatus === "home" ? "away" : "home";
+  async function sendStatus(memberId, status, successMessage) {
     try {
-      await api("/members/" + memberId + "/status", { method: "PATCH", body: { deviceId: deviceId, status: nextStatus, source: "manual" } });
-      showToast(nextStatus === "home" ? "家族に「ただいま」を伝えました" : "家族に「いってきます」を伝えました");
+      await api("/members/" + memberId + "/status", { method: "PATCH", body: { deviceId: deviceId, status: status, source: "manual" } });
+      if (successMessage) showToast(successMessage);
       loadHome();
     } catch (err) {
       showToast(err.message);
     }
+  }
+
+  Array.prototype.forEach.call(el("status-switch").querySelectorAll("button"), function (btn) {
+    btn.addEventListener("click", function () {
+      var memberId = storageGet(STORAGE.memberId);
+      if (!memberId) return;
+      var status = btn.dataset.status;
+      var label = status === "nearby" ? myNearbyLabel : STATUS_LABEL[status];
+      sendStatus(memberId, status, "家族に「" + label + "」を伝えました");
+    });
+  });
+
+  // ---------- 管理者による他メンバーの状態変更 ----------
+  var statusModalTarget = null;
+
+  function openStatusModal(member) {
+    statusModalTarget = member;
+    el("status-modal-title").textContent = member.nameOrAnonymous + "の状態を変更";
+    el("status-modal-nearby").textContent = member.nearbyLabel + "にする";
+    el("status-modal").hidden = false;
+  }
+
+  function closeStatusModal() {
+    statusModalTarget = null;
+    el("status-modal").hidden = true;
+  }
+
+  el("status-modal").addEventListener("click", function (e) {
+    if (e.target === el("status-modal")) closeStatusModal();
+  });
+  el("status-modal-cancel").addEventListener("click", closeStatusModal);
+  Array.prototype.forEach.call(el("status-modal").querySelectorAll(".modal-btn[data-status]"), function (btn) {
+    btn.addEventListener("click", function () {
+      if (!statusModalTarget) return;
+      var status = btn.dataset.status;
+      var label = status === "nearby" ? statusModalTarget.nearbyLabel : STATUS_LABEL[status];
+      sendStatus(statusModalTarget.memberId, status, statusModalTarget.nameOrAnonymous + "を「" + label + "」にしました");
+      closeStatusModal();
+    });
   });
 
   var settingsName = el("settings-name");
@@ -318,6 +419,23 @@
       await api("/members/" + memberId + "/profile", { method: "PATCH", body: { deviceId: deviceId, name: value } });
       storageSet(STORAGE.myName, value);
       showToast("名前を変更しました");
+      loadHome();
+    } catch (err) {
+      showToast(err.message);
+    }
+  });
+
+  var settingsNearbyLabel = el("settings-nearby-label");
+  settingsNearbyLabel.addEventListener("change", async function () {
+    var memberId = storageGet(STORAGE.memberId);
+    var value = settingsNearbyLabel.value.trim();
+    if (!memberId || value.length === 0) {
+      settingsNearbyLabel.value = myNearbyLabel;
+      return;
+    }
+    try {
+      await api("/members/" + memberId + "/profile", { method: "PATCH", body: { deviceId: deviceId, nearbyLabel: value } });
+      showToast("呼び方を変更しました");
       loadHome();
     } catch (err) {
       showToast(err.message);

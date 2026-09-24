@@ -1,6 +1,7 @@
 import { google, sheets_v4 } from "googleapis";
 import { AppError } from "./errors";
 import {
+  isEffectiveAdmin,
   Repository,
   generateInviteCode,
   inviteCodeExpiryFrom,
@@ -29,6 +30,8 @@ const MEMBERS_COLUMNS = [
   // 施設内判定機能で追加(既存の行との互換性のため末尾に追加)
   "building_radius_m",
   "nearby_label",
+  // 管理者機能で追加(既存の行との互換性のため末尾に追加)
+  "is_admin",
 ] as const;
 
 /**
@@ -161,6 +164,7 @@ export class SheetsRepository implements Repository {
       createdAt: row[12],
       buildingRadiusM: toNumberOrNull(row[13]),
       nearbyLabel: row[14] || NEARBY_LABEL_DEFAULT,
+      isAdmin: toBool(row[15]),
     };
   }
 
@@ -181,6 +185,7 @@ export class SheetsRepository implements Repository {
       m.createdAt,
       m.buildingRadiusM ?? "",
       m.nearbyLabel,
+      m.isAdmin,
     ];
   }
 
@@ -238,6 +243,7 @@ export class SheetsRepository implements Repository {
       notifyEnabled: true,
       pushToken: null,
       createdAt: now.toISOString(),
+      isAdmin: true,
     };
     await this.appendRow(GROUPS_SHEET, this.groupToRow(group));
     await this.appendRow(MEMBERS_SHEET, this.memberToRow(member));
@@ -271,6 +277,7 @@ export class SheetsRepository implements Repository {
       notifyEnabled: true,
       pushToken: null,
       createdAt: now.toISOString(),
+      isAdmin: false,
     };
     await this.appendRow(MEMBERS_SHEET, this.memberToRow(member));
     return { group: found.group, member };
@@ -324,11 +331,33 @@ export class SheetsRepository implements Repository {
   }
 
   async updateStatus(memberId: string, deviceId: string, status: PresenceStatus) {
-    const { rowNumber, member } = await this.requireOwnedMemberRow(memberId, deviceId);
+    const { rowNumber, member } = await this.requireStatusPermissionRow(memberId, deviceId);
     member.status = status;
     member.statusUpdatedAt = new Date().toISOString();
     await this.updateRow(MEMBERS_SHEET, rowNumber, this.memberToRow(member));
     return member;
+  }
+
+  /**
+   * 状態(status)は本人に加えて、同じグループの管理者からも変更できる
+   * (「管理者は参加者の状態設定を手動で変更もできる」という要件のため)。
+   */
+  private async requireStatusPermissionRow(memberId: string, requesterDeviceId: string) {
+    const found = await this.findMemberRow(memberId);
+    if (!found) throw new AppError("NOT_FOUND", "メンバーが見つかりません");
+    if (found.member.deviceId === requesterDeviceId) {
+      return found;
+    }
+    const requester = await this.getMemberByDeviceId(requesterDeviceId);
+    const groupMembers = await this.getMembersByGroup(found.member.groupId);
+    if (
+      !requester ||
+      requester.groupId !== found.member.groupId ||
+      !isEffectiveAdmin(requester, groupMembers)
+    ) {
+      throw new AppError("FORBIDDEN", "このメンバーの状態を変更する権限がありません");
+    }
+    return found;
   }
 
   async updateProfile(

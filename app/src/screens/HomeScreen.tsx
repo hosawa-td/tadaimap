@@ -17,7 +17,7 @@ import { MemberView, PresenceStatus } from "../api";
 import { colors, radius, spacing, typography } from "../theme/tokens";
 
 export default function HomeScreen() {
-  const { members, inviteCode, refreshMembers, setStatus, nearbyLabel } = useApp();
+  const { members, inviteCode, refreshMembers, setStatus, setMemberStatus, nearbyLabel } = useApp();
   const [refreshing, setRefreshing] = useState(false);
   const [sending, setSending] = useState(false);
 
@@ -44,6 +44,20 @@ export default function HomeScreen() {
   };
 
   const myStatus = members.find((m) => m.isMe)?.status;
+  const amIAdmin = members.find((m) => m.isMe)?.isAdmin ?? false;
+
+  const handleAdminChangeStatus = (target: MemberView) => {
+    Alert.alert(
+      `${target.nameOrAnonymous}の状態を変更`,
+      "管理者として、この家族の状態を代わりに変更できます。",
+      [
+        { text: "在宅にする", onPress: () => setMemberStatus(target.memberId, "home") },
+        { text: `${target.nearbyLabel}にする`, onPress: () => setMemberStatus(target.memberId, "nearby") },
+        { text: "外出中にする", onPress: () => setMemberStatus(target.memberId, "away") },
+        { text: "キャンセル", style: "cancel" },
+      ]
+    );
+  };
 
   const handleSetStatus = async (status: PresenceStatus) => {
     if (status === myStatus || sending) return;
@@ -92,13 +106,21 @@ export default function HomeScreen() {
         />
       </View>
       {sending && <ActivityIndicator style={styles.statusSwitchLoading} color={colors.accent} />}
+      {amIAdmin && (
+        <Text style={styles.adminHint}>管理者として、家族の名前を長押しすると代わりに状態を変更できます</Text>
+      )}
 
       <FlatList
         data={members}
         keyExtractor={(m) => m.memberId}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
-        renderItem={({ item }) => <MemberRow member={item} />}
+        renderItem={({ item }) => (
+          <MemberRow
+            member={item}
+            onLongPress={amIAdmin && !item.isMe ? () => handleAdminChangeStatus(item) : undefined}
+          />
+        )}
         ListEmptyComponent={<Text style={styles.empty}>メンバー情報を読み込んでいます…</Text>}
       />
     </SafeAreaView>
@@ -116,9 +138,15 @@ const STATUS_SOFT_COLOR: Record<PresenceStatus, string> = {
   away: colors.awaySoft,
 };
 
-function MemberRow({ member }: { member: MemberView }) {
+function MemberRow({ member, onLongPress }: { member: MemberView; onLongPress?: () => void }) {
+  const Wrapper = onLongPress ? TouchableOpacity : View;
   return (
-    <View style={styles.memberCard}>
+    <Wrapper
+      style={styles.memberCard}
+      onLongPress={onLongPress}
+      delayLongPress={400}
+      {...(onLongPress ? { activeOpacity: 0.7 } : {})}
+    >
       <View style={styles.avatar}>
         <Text style={styles.avatarText}>{member.nameOrAnonymous.slice(0, 1)}</Text>
       </View>
@@ -130,6 +158,11 @@ function MemberRow({ member }: { member: MemberView }) {
               <Text style={styles.meTagText}>あなた</Text>
             </View>
           )}
+          {member.isAdmin && (
+            <View style={styles.adminTag}>
+              <Text style={styles.adminTagText}>管理者</Text>
+            </View>
+          )}
         </View>
         <Text style={styles.memberTime}>{formatStatusLine(member)}</Text>
       </View>
@@ -138,7 +171,7 @@ function MemberRow({ member }: { member: MemberView }) {
           {statusLabel(member)}
         </Text>
       </View>
-    </View>
+    </Wrapper>
   );
 }
 
@@ -194,6 +227,13 @@ const styles = StyleSheet.create({
   },
   statusSwitchButtonText: { ...typography.labelLg, fontSize: 13 },
   statusSwitchLoading: { marginBottom: spacing.sm },
+  adminHint: {
+    ...typography.bodySm,
+    color: colors.textFaint,
+    textAlign: "center",
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+  },
   list: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl, gap: spacing.sm },
   empty: { ...typography.bodyMd, color: colors.textFaint, textAlign: "center", marginTop: spacing.xl },
   memberCard: {
@@ -223,6 +263,13 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
   },
   meTagText: { ...typography.bodySm, color: colors.textSecondary, fontSize: 10 },
+  adminTag: {
+    backgroundColor: colors.homeSoft,
+    borderRadius: radius.sm,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  adminTagText: { ...typography.bodySm, color: colors.home, fontSize: 10 },
   memberTime: { ...typography.bodySm, color: colors.textFaint, marginTop: 2 },
   statusPill: { borderRadius: radius.full, paddingHorizontal: spacing.sm, paddingVertical: 6 },
   statusPillText: { ...typography.labelLg, fontSize: 12 },

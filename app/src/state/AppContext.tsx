@@ -45,6 +45,7 @@ interface AppContextValue {
   refreshMembers: () => Promise<void>;
   saveHome: (lat: number, lng: number, homeRadiusM: number, buildingRadiusM: number) => Promise<void>;
   setStatus: (status: PresenceStatus, source: "auto" | "manual") => Promise<void>;
+  setMemberStatus: (targetMemberId: string, status: PresenceStatus) => Promise<void>;
   saveProfile: (fields: { name?: string; showName?: boolean; nearbyLabel?: string }) => Promise<void>;
   setNotifyEnabled: (value: boolean) => Promise<void>;
   refreshInviteCode: () => Promise<string>;
@@ -187,6 +188,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [api, memberId, refreshMembers, withLoading]
   );
 
+  const setMemberStatus = useCallback(
+    async (targetMemberId: string, status: PresenceStatus) => {
+      if (!api) return;
+      // 管理者が他のメンバーの状態を代わりに変更する場合に使う(権限の判定はサーバー側で行う)
+      await withLoading(async () => {
+        await api.updateStatus(targetMemberId, status, "manual");
+        await refreshMembers();
+      });
+    },
+    [api, refreshMembers, withLoading]
+  );
+
   const saveProfile = useCallback(
     async (fields: { name?: string; showName?: boolean; nearbyLabel?: string }) => {
       if (!api || !memberId) return;
@@ -282,6 +295,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     refreshMembers,
     saveHome,
     setStatus,
+    setMemberStatus,
     saveProfile,
     setNotifyEnabled,
     refreshInviteCode,

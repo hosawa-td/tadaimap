@@ -55,6 +55,22 @@ export interface Repository {
   leaveGroup(memberId: string, deviceId: string): Promise<void>;
 }
 
+/**
+ * 指定したメンバーが、そのグループの管理者として扱えるかを判定する。
+ * 通常は member.isAdmin を見るだけでよいが、この機能を追加する前に
+ * 作られたグループには is_admin の記録が無いため、その場合は
+ * 作成日時が最も古いメンバーを管理者とみなす(後方互換のため)。
+ */
+export function isEffectiveAdmin(candidate: Member, groupMembers: Member[]): boolean {
+  if (candidate.isAdmin) return true;
+  const anyExplicitAdmin = groupMembers.some((m) => m.isAdmin);
+  if (anyExplicitAdmin) return false;
+  const earliest = groupMembers.reduce((a, b) =>
+    new Date(a.createdAt).getTime() <= new Date(b.createdAt).getTime() ? a : b
+  );
+  return candidate.memberId === earliest.memberId;
+}
+
 export const INVITE_CODE_VALID_DAYS = 7;
 
 export function generateInviteCode(): string {
