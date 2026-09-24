@@ -4,6 +4,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import { AppProvider, useApp } from "./src/state/AppContext";
 import StartScreen from "./src/screens/StartScreen";
@@ -39,8 +40,26 @@ function MainNavigator() {
         tabBarInactiveTintColor: colors.textFaint,
       }}
     >
-      <MainTab.Screen name="Home" component={HomeScreen} options={{ tabBarLabel: "ホーム" }} />
-      <MainTab.Screen name="Settings" component={SettingsScreen} options={{ tabBarLabel: "設定" }} />
+      <MainTab.Screen
+        name="Home"
+        component={HomeScreen}
+        options={{
+          tabBarLabel: "ホーム",
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? "home" : "home-outline"} color={color} size={size} />
+          ),
+        }}
+      />
+      <MainTab.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{
+          tabBarLabel: "設定",
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? "settings" : "settings-outline"} color={color} size={size} />
+          ),
+        }}
+      />
     </MainTab.Navigator>
   );
 }

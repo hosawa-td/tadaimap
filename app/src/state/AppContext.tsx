@@ -157,32 +157,49 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const saveProfile = useCallback(
     async (fields: { name?: string; showName?: boolean }) => {
       if (!api || !memberId) return;
-      await withLoading(async () => {
-        await api.updateProfile(memberId, fields);
-        if (fields.name !== undefined) setMyName(fields.name);
-        if (fields.showName !== undefined) setShowNameState(fields.showName);
-        await refreshMembers();
-      });
+      // 画面のスイッチ/入力欄がすぐに反映されるよう、通信の結果を待たず先に表示を更新する
+      // (通信が失敗した場合は元の値に戻す)
+      const previousName = myName;
+      const previousShowName = showName;
+      if (fields.name !== undefined) setMyName(fields.name);
+      if (fields.showName !== undefined) setShowNameState(fields.showName);
+      try {
+        await withLoading(async () => {
+          await api.updateProfile(memberId, fields);
+          await refreshMembers();
+        });
+      } catch (err) {
+        setMyName(previousName);
+        setShowNameState(previousShowName);
+        throw err;
+      }
     },
-    [api, memberId, refreshMembers, withLoading]
+    [api, memberId, myName, showName, refreshMembers, withLoading]
   );
 
   const setNotifyEnabled = useCallback(
     async (value: boolean) => {
       if (!api || !memberId) return;
-      await withLoading(async () => {
-        await api.updateNotify(memberId, value);
-        setNotifyEnabledState(value);
-        await AsyncStorage.setItem(STORAGE_KEYS.notifyEnabled, value ? "1" : "0");
-        if (value) {
-          const token = await registerForPushNotifications();
-          if (token) {
-            await api.updatePushToken(memberId, token);
+      // saveProfile と同様、スイッチの見た目は先に切り替え、失敗時のみ元に戻す
+      const previous = notifyEnabled;
+      setNotifyEnabledState(value);
+      try {
+        await withLoading(async () => {
+          await api.updateNotify(memberId, value);
+          await AsyncStorage.setItem(STORAGE_KEYS.notifyEnabled, value ? "1" : "0");
+          if (value) {
+            const token = await registerForPushNotifications();
+            if (token) {
+              await api.updatePushToken(memberId, token);
+            }
           }
-        }
-      });
+        });
+      } catch (err) {
+        setNotifyEnabledState(previous);
+        throw err;
+      }
     },
-    [api, memberId, withLoading]
+    [api, memberId, notifyEnabled, withLoading]
   );
 
   const refreshInviteCode = useCallback(async () => {
