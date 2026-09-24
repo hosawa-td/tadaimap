@@ -5,6 +5,26 @@ function isExpoGo(): boolean {
 }
 
 /**
+ * プッシュ通知を受け取った瞬間(アプリがフォアグラウンド/バックグラウンドどちらの場合も)、
+ * および通知をタップしてアプリを開いた瞬間に onNotification を呼び出す。
+ * Expo Go上では何もしない(unsubscribeは空関数を返す)。
+ */
+export function subscribeToNotifications(onNotification: () => void): () => void {
+  if (isExpoGo()) {
+    return () => {};
+  }
+
+  const Notifications = require("expo-notifications");
+  const receivedSub = Notifications.addNotificationReceivedListener(onNotification);
+  const responseSub = Notifications.addNotificationResponseReceivedListener(onNotification);
+
+  return () => {
+    receivedSub.remove();
+    responseSub.remove();
+  };
+}
+
+/**
  * 通知の許可を求め、許可された場合はExpo Push Tokenを返す。
  * 拒否された場合やシミュレータ等で取得できない場合はnullを返す
  * （外部インターフェース設計書の方針: 失敗してもアプリの他機能には影響させない）。

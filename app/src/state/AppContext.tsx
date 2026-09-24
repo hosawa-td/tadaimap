@@ -11,7 +11,7 @@ import { ApiClient, MemberView, PresenceStatus } from "../api";
 import { getOrCreateDeviceId } from "../deviceId";
 import { clearMembership, loadMembership, saveMembership, STORAGE_KEYS } from "../storage";
 import { RADIUS_DEFAULT } from "../validation";
-import { registerForPushNotifications } from "../notifications";
+import { registerForPushNotifications, subscribeToNotifications } from "../notifications";
 import { startHomeGeofence, stopHomeGeofence } from "../location";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
@@ -93,6 +93,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setInviteCode(result.inviteCode);
     setMembers(result.members);
   }, [api, groupId]);
+
+  useEffect(() => {
+    // 帰宅・外出のプッシュ通知を受け取った瞬間に、一覧をその場で最新化する
+    // (通知が届いてから次の定期更新まで待たせないため)
+    const unsubscribe = subscribeToNotifications(() => {
+      refreshMembers().catch(() => {});
+    });
+    return unsubscribe;
+  }, [refreshMembers]);
 
   const createGroup = useCallback(
     async (name: string) => {
