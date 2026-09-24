@@ -22,7 +22,8 @@ export interface Repository {
     deviceId: string,
     homeLat: number,
     homeLng: number,
-    homeRadiusM: number
+    homeRadiusM: number,
+    buildingRadiusM: number
   ): Promise<Member>;
 
   updateStatus(
@@ -34,7 +35,7 @@ export interface Repository {
   updateProfile(
     memberId: string,
     deviceId: string,
-    fields: { name?: string; showName?: boolean }
+    fields: { name?: string; showName?: boolean; nearbyLabel?: string }
   ): Promise<Member>;
 
   updateNotify(

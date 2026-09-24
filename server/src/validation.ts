@@ -1,6 +1,10 @@
 export const NAME_MAX_LENGTH = 12;
 export const RADIUS_MIN = 50;
 export const RADIUS_MAX = 300;
+export const BUILDING_RADIUS_MIN = 100;
+export const BUILDING_RADIUS_MAX = 2000;
+export const NEARBY_LABEL_MAX_LENGTH = 12;
+export const NEARBY_LABEL_DEFAULT = "施設内";
 
 export function isValidName(name: unknown): name is string {
   return (
@@ -21,6 +25,28 @@ export function isValidRadius(radius: unknown): radius is number {
     radius >= RADIUS_MIN &&
     radius <= RADIUS_MAX
   );
+}
+
+export function isValidBuildingRadius(radius: unknown, homeRadiusM: number): radius is number {
+  return (
+    typeof radius === "number" &&
+    Number.isFinite(radius) &&
+    radius >= BUILDING_RADIUS_MIN &&
+    radius <= BUILDING_RADIUS_MAX &&
+    radius >= homeRadiusM
+  );
+}
+
+export function isValidNearbyLabel(label: unknown): label is string {
+  return (
+    typeof label === "string" &&
+    label.trim().length > 0 &&
+    label.trim().length <= NEARBY_LABEL_MAX_LENGTH
+  );
+}
+
+export function isValidStatus(status: unknown): status is "home" | "nearby" | "away" {
+  return status === "home" || status === "nearby" || status === "away";
 }
 
 export function isValidLatLng(lat: unknown, lng: unknown): boolean {

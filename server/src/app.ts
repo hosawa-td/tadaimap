@@ -11,11 +11,14 @@ import { SheetsRepository } from "./repository.sheets";
 import { PushSender, ExpoPushSender } from "./push";
 import { Member, MemberView, PresenceStatus } from "./types";
 import {
+  isValidBuildingRadius,
   isValidDeviceId,
   isValidInviteCode,
   isValidLatLng,
   isValidName,
+  isValidNearbyLabel,
   isValidRadius,
+  isValidStatus,
 } from "./validation";
 
 function getDeviceId(req: Request): string | undefined {
@@ -33,6 +36,7 @@ function toMemberView(member: Member, requesterDeviceId: string | undefined): Me
     isMe,
     status: member.status,
     statusUpdatedAt: member.statusUpdatedAt,
+    nearbyLabel: member.nearbyLabel,
   };
 }
 
@@ -117,7 +121,7 @@ export function createApp(repository: Repository, pushSender: PushSender) {
     asyncHandler(async (req, res) => {
       const deviceId = getDeviceId(req);
       const { memberId } = req.params;
-      const { homeLat, homeLng, homeRadiusM } = req.body ?? {};
+      const { homeLat, homeLng, homeRadiusM, buildingRadiusM } = req.body ?? {};
       if (!isValidDeviceId(deviceId)) {
         throw new AppError("VALIDATION_ERROR", "device_idは必須です");
       }
@@ -127,7 +131,13 @@ export function createApp(repository: Repository, pushSender: PushSender) {
       if (!isValidRadius(homeRadiusM)) {
         throw new AppError("VALIDATION_ERROR", "判定範囲は50m〜300mで指定してください");
       }
-      await repository.updateHome(memberId, deviceId, homeLat, homeLng, homeRadiusM);
+      if (!isValidBuildingRadius(buildingRadiusM, homeRadiusM)) {
+        throw new AppError(
+          "VALIDATION_ERROR",
+          "施設内と判定する範囲は100m〜2000m、かつ自宅の範囲以上で指定してください"
+        );
+      }
+      await repository.updateHome(memberId, deviceId, homeLat, homeLng, homeRadiusM, buildingRadiusM);
       res.status(200).json({ ok: true });
     })
   );
@@ -142,8 +152,11 @@ export function createApp(repository: Repository, pushSender: PushSender) {
       if (!isValidDeviceId(deviceId)) {
         throw new AppError("VALIDATION_ERROR", "device_idは必須です");
       }
-      if (status !== "home" && status !== "away") {
-        throw new AppError("VALIDATION_ERROR", 'statusは"home"または"away"を指定してください');
+      if (!isValidStatus(status)) {
+        throw new AppError(
+          "VALIDATION_ERROR",
+          'statusは"home"・"nearby"・"away"のいずれかを指定してください'
+        );
       }
       const member = await repository.updateStatus(memberId, deviceId, status as PresenceStatus);
       await notifyGroupOfStatusChange(repository, pushSender, member);
@@ -157,7 +170,7 @@ export function createApp(repository: Repository, pushSender: PushSender) {
     asyncHandler(async (req, res) => {
       const deviceId = getDeviceId(req);
       const { memberId } = req.params;
-      const { name, showName } = req.body ?? {};
+      const { name, showName, nearbyLabel } = req.body ?? {};
       if (!isValidDeviceId(deviceId)) {
         throw new AppError("VALIDATION_ERROR", "device_idは必須です");
       }
@@ -167,7 +180,10 @@ export function createApp(repository: Repository, pushSender: PushSender) {
       if (showName !== undefined && typeof showName !== "boolean") {
         throw new AppError("VALIDATION_ERROR", "show_nameはtrue/falseで指定してください");
       }
-      await repository.updateProfile(memberId, deviceId, { name, showName });
+      if (nearbyLabel !== undefined && !isValidNearbyLabel(nearbyLabel)) {
+        throw new AppError("VALIDATION_ERROR", "呼び方は1〜12文字で入力してください");
+      }
+      await repository.updateProfile(memberId, deviceId, { name, showName, nearbyLabel });
       res.status(200).json({ ok: true });
     })
   );
@@ -261,7 +277,11 @@ async function notifyGroupOfStatusChange(
   const groupMembers = await repository.getMembersByGroup(member.groupId);
   const label = member.showName ? member.name : "家族の誰か";
   const body =
-    member.status === "home" ? `${label}が帰宅しました` : `${label}が外出しました`;
+    member.status === "home"
+      ? `${label}が帰宅しました`
+      : member.status === "nearby"
+      ? `${label}が${member.nearbyLabel}に移動しました`
+      : `${label}が外出しました`;
   const targets = groupMembers.filter(
     (m) => m.memberId !== member.memberId && m.notifyEnabled && m.pushToken
   );

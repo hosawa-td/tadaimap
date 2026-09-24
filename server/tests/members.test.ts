@@ -53,12 +53,12 @@ describe("GET /groups/:groupId/members", () => {
 });
 
 describe("PATCH /members/:memberId/home", () => {
-  it("自宅位置・判定範囲を登録できる", async () => {
+  it("自宅位置・判定範囲・施設内範囲を登録できる", async () => {
     const { app, memberIdA } = await setupGroupWithTwoMembers();
 
     const res = await request(app)
       .patch(`/members/${memberIdA}/home`)
-      .send({ deviceId: "dev-1", homeLat: 35.68, homeLng: 139.76, homeRadiusM: 150 });
+      .send({ deviceId: "dev-1", homeLat: 35.68, homeLng: 139.76, homeRadiusM: 150, buildingRadiusM: 300 });
 
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
@@ -69,7 +69,18 @@ describe("PATCH /members/:memberId/home", () => {
 
     const res = await request(app)
       .patch(`/members/${memberIdA}/home`)
-      .send({ deviceId: "dev-1", homeLat: 35.68, homeLng: 139.76, homeRadiusM: 20 });
+      .send({ deviceId: "dev-1", homeLat: 35.68, homeLng: 139.76, homeRadiusM: 20, buildingRadiusM: 300 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("施設内範囲が自宅の範囲より小さいとエラーになる", async () => {
+    const { app, memberIdA } = await setupGroupWithTwoMembers();
+
+    const res = await request(app)
+      .patch(`/members/${memberIdA}/home`)
+      .send({ deviceId: "dev-1", homeLat: 35.68, homeLng: 139.76, homeRadiusM: 200, buildingRadiusM: 150 });
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
@@ -80,7 +91,7 @@ describe("PATCH /members/:memberId/home", () => {
 
     const res = await request(app)
       .patch(`/members/${memberIdA}/home`)
-      .send({ deviceId: "dev-2", homeLat: 35.68, homeLng: 139.76, homeRadiusM: 100 });
+      .send({ deviceId: "dev-2", homeLat: 35.68, homeLng: 139.76, homeRadiusM: 100, buildingRadiusM: 300 });
 
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe("FORBIDDEN");
@@ -116,6 +127,24 @@ describe("PATCH /members/:memberId/status", () => {
     await request(app).patch(`/members/${memberIdA}/status`).send({ deviceId: "dev-1", status: "home" });
 
     expect(push.sent).toHaveLength(0);
+  });
+
+  it('statusに"nearby"を指定でき、本人の呼び方(nearbyLabel)を使って通知される', async () => {
+    const { app, push, memberIdA, memberIdB } = await setupGroupWithTwoMembers();
+
+    await request(app)
+      .patch(`/members/${memberIdB}/push-token`)
+      .send({ deviceId: "dev-2", pushToken: "ExponentPushToken[xxx]" });
+    await request(app)
+      .patch(`/members/${memberIdA}/profile`)
+      .send({ deviceId: "dev-1", nearbyLabel: "ロビー" });
+
+    const res = await request(app)
+      .patch(`/members/${memberIdA}/status`)
+      .send({ deviceId: "dev-1", status: "nearby" });
+
+    expect(res.status).toBe(200);
+    expect(push.sent[0].body).toContain("ロビーに移動しました");
   });
 
   it("不正なstatus値はVALIDATION_ERRORになる", async () => {

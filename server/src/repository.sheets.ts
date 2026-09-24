@@ -6,6 +6,7 @@ import {
   inviteCodeExpiryFrom,
 } from "./repository";
 import { Group, Member, PresenceStatus } from "./types";
+import { NEARBY_LABEL_DEFAULT } from "./validation";
 
 const GROUPS_SHEET = "Groups";
 const MEMBERS_SHEET = "Members";
@@ -25,6 +26,9 @@ const MEMBERS_COLUMNS = [
   "notify_enabled",
   "push_token",
   "created_at",
+  // 施設内判定機能で追加(既存の行との互換性のため末尾に追加)
+  "building_radius_m",
+  "nearby_label",
 ] as const;
 
 /**
@@ -155,6 +159,8 @@ export class SheetsRepository implements Repository {
       notifyEnabled: row[10] === undefined ? true : toBool(row[10]),
       pushToken: row[11] || null,
       createdAt: row[12],
+      buildingRadiusM: toNumberOrNull(row[13]),
+      nearbyLabel: row[14] || NEARBY_LABEL_DEFAULT,
     };
   }
 
@@ -173,6 +179,8 @@ export class SheetsRepository implements Repository {
       m.notifyEnabled,
       m.pushToken ?? "",
       m.createdAt,
+      m.buildingRadiusM ?? "",
+      m.nearbyLabel,
     ];
   }
 
@@ -225,6 +233,8 @@ export class SheetsRepository implements Repository {
       homeLat: null,
       homeLng: null,
       homeRadiusM: null,
+      buildingRadiusM: null,
+      nearbyLabel: NEARBY_LABEL_DEFAULT,
       notifyEnabled: true,
       pushToken: null,
       createdAt: now.toISOString(),
@@ -256,6 +266,8 @@ export class SheetsRepository implements Repository {
       homeLat: null,
       homeLng: null,
       homeRadiusM: null,
+      buildingRadiusM: null,
+      nearbyLabel: NEARBY_LABEL_DEFAULT,
       notifyEnabled: true,
       pushToken: null,
       createdAt: now.toISOString(),
@@ -294,11 +306,19 @@ export class SheetsRepository implements Repository {
     return found;
   }
 
-  async updateHome(memberId: string, deviceId: string, homeLat: number, homeLng: number, homeRadiusM: number) {
+  async updateHome(
+    memberId: string,
+    deviceId: string,
+    homeLat: number,
+    homeLng: number,
+    homeRadiusM: number,
+    buildingRadiusM: number
+  ) {
     const { rowNumber, member } = await this.requireOwnedMemberRow(memberId, deviceId);
     member.homeLat = homeLat;
     member.homeLng = homeLng;
     member.homeRadiusM = homeRadiusM;
+    member.buildingRadiusM = buildingRadiusM;
     await this.updateRow(MEMBERS_SHEET, rowNumber, this.memberToRow(member));
     return member;
   }
@@ -311,10 +331,15 @@ export class SheetsRepository implements Repository {
     return member;
   }
 
-  async updateProfile(memberId: string, deviceId: string, fields: { name?: string; showName?: boolean }) {
+  async updateProfile(
+    memberId: string,
+    deviceId: string,
+    fields: { name?: string; showName?: boolean; nearbyLabel?: string }
+  ) {
     const { rowNumber, member } = await this.requireOwnedMemberRow(memberId, deviceId);
     if (fields.name !== undefined) member.name = fields.name.trim();
     if (fields.showName !== undefined) member.showName = fields.showName;
+    if (fields.nearbyLabel !== undefined) member.nearbyLabel = fields.nearbyLabel.trim();
     await this.updateRow(MEMBERS_SHEET, rowNumber, this.memberToRow(member));
     return member;
   }

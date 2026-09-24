@@ -6,6 +6,7 @@ import {
   inviteCodeExpiryFrom,
 } from "./repository";
 import { Group, Member, PresenceStatus } from "./types";
+import { NEARBY_LABEL_DEFAULT } from "./validation";
 
 /**
  * インメモリ実装。テスト用、および開発初期のローカル動作確認用。
@@ -34,6 +35,8 @@ export class MemoryRepository implements Repository {
       homeLat: null,
       homeLng: null,
       homeRadiusM: null,
+      buildingRadiusM: null,
+      nearbyLabel: NEARBY_LABEL_DEFAULT,
       notifyEnabled: true,
       pushToken: null,
       createdAt: now.toISOString(),
@@ -72,6 +75,8 @@ export class MemoryRepository implements Repository {
       homeLat: null,
       homeLng: null,
       homeRadiusM: null,
+      buildingRadiusM: null,
+      nearbyLabel: NEARBY_LABEL_DEFAULT,
       notifyEnabled: true,
       pushToken: null,
       createdAt: now.toISOString(),
@@ -103,12 +108,14 @@ export class MemoryRepository implements Repository {
     deviceId: string,
     homeLat: number,
     homeLng: number,
-    homeRadiusM: number
+    homeRadiusM: number,
+    buildingRadiusM: number
   ): Promise<Member> {
     const member = this.requireOwnedMember(memberId, deviceId);
     member.homeLat = homeLat;
     member.homeLng = homeLng;
     member.homeRadiusM = homeRadiusM;
+    member.buildingRadiusM = buildingRadiusM;
     return member;
   }
 
@@ -126,11 +133,12 @@ export class MemoryRepository implements Repository {
   async updateProfile(
     memberId: string,
     deviceId: string,
-    fields: { name?: string; showName?: boolean }
+    fields: { name?: string; showName?: boolean; nearbyLabel?: string }
   ): Promise<Member> {
     const member = this.requireOwnedMember(memberId, deviceId);
     if (fields.name !== undefined) member.name = fields.name.trim();
     if (fields.showName !== undefined) member.showName = fields.showName;
+    if (fields.nearbyLabel !== undefined) member.nearbyLabel = fields.nearbyLabel.trim();
     return member;
   }
 

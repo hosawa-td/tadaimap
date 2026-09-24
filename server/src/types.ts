@@ -1,4 +1,4 @@
-export type PresenceStatus = "home" | "away";
+export type PresenceStatus = "home" | "nearby" | "away";
 
 export interface Group {
   groupId: string;
@@ -18,6 +18,10 @@ export interface Member {
   homeLat: number | null;
   homeLng: number | null;
   homeRadiusM: number | null;
+  /** 自宅より一回り大きい「施設内」判定用の範囲(メートル)。homeRadiusM以上の値。 */
+  buildingRadiusM: number | null;
+  /** "nearby"ステータスの表示名。本人が自由に設定できる(初期値「施設内」)。 */
+  nearbyLabel: string;
   notifyEnabled: boolean;
   pushToken: string | null;
   createdAt: string; // ISO8601
@@ -29,4 +33,6 @@ export interface MemberView {
   isMe: boolean;
   status: PresenceStatus;
   statusUpdatedAt: string;
+  /** status が "nearby" の場合に表示すべきラベル(本人が設定した呼び方)。 */
+  nearbyLabel: string;
 }
