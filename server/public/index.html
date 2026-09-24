@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>タダイマップ Web版</title>
+<style>
+  :root{
+    --bg:#FDF8F0;
+    --surface:#FFFFFF;
+    --surface-sand:#F5E6D3;
+    --primary:#182430;
+    --on-primary:#FFFFFF;
+    --accent:#D9920A;
+    --on-accent:#FFFFFF;
+    --home:#4A7C59;
+    --home-soft:rgba(74,124,89,0.12);
+    --away:#7D8A99;
+    --away-soft:rgba(125,138,153,0.15);
+    --text:#1D1C17;
+    --text-muted:#44474B;
+    --text-faint:#7D8A99;
+    --border:#E7E2DA;
+    --danger:#BA1A1A;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:"Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .page{max-width:480px;margin:0 auto;padding:24px 20px calc(40px + env(safe-area-inset-bottom, 0px));min-height:100%;}
+  h1{font-size:22px;margin:8px 0 4px;}
+  .lead{font-size:13.5px;color:var(--text-muted);line-height:1.7;margin:0 0 20px;}
+  .badge{display:inline-flex;align-items:center;gap:6px;background:var(--surface-sand);color:var(--primary);font-size:12px;font-weight:700;padding:6px 12px;border-radius:100px;margin-bottom:16px;}
+  label{display:block;font-size:12.5px;font-weight:700;color:var(--text-muted);margin:16px 0 6px;letter-spacing:.02em;}
+  input[type="text"]{
+    width:100%;padding:13px 14px;border-radius:12px;border:1.5px solid var(--border);
+    background:var(--surface);color:var(--text);font-size:16px;outline:none;
+  }
+  input[type="text"]:focus{border-color:var(--accent);}
+  .hint{font-size:12px;color:var(--text-faint);margin-top:6px;line-height:1.6;}
+  .btn{
+    appearance:none;border:none;border-radius:100px;padding:14px 18px;font-size:15px;font-weight:700;
+    cursor:pointer;width:100%;margin-top:18px;
+  }
+  .btn-primary{background:var(--primary);color:var(--on-primary);}
+  .btn-primary:disabled{opacity:.4;cursor:not-allowed;}
+  .btn-accent{background:var(--accent);color:var(--on-accent);}
+  .btn-outline{background:transparent;color:var(--text);border:1.5px solid var(--border);}
+  .btn-danger{background:transparent;color:var(--danger);border:1.5px solid var(--danger);}
+  .card{background:var(--surface);border-radius:16px;padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:12px;box-shadow:0 4px 20px -2px rgba(24,36,48,0.05);}
+  .avatar{width:44px;height:44px;border-radius:50%;background:var(--surface-sand);color:var(--primary);display:flex;align-items:center;justify-content:center;font-weight:700;flex:none;}
+  .avatar.anon{background:var(--away-soft);color:var(--text-muted);}
+  .info{flex:1;min-width:0;}
+  .name-row{display:flex;align-items:center;gap:6px;font-weight:700;font-size:14.5px;}
+  .me-tag{font-size:10px;font-weight:700;color:var(--text-faint);background:var(--surface-sand);border-radius:6px;padding:1px 6px;}
+  .time{font-size:12px;color:var(--text-faint);margin-top:2px;}
+  .status{flex:none;font-size:12px;font-weight:700;padding:6px 11px;border-radius:100px;}
+  .status.home{background:var(--home-soft);color:var(--home);}
+  .status.away{background:var(--away-soft);color:var(--away);}
+  .section-title{font-size:11.5px;font-weight:700;color:var(--text-faint);letter-spacing:.04em;margin:24px 4px 8px;text-transform:uppercase;}
+  .settings-card{background:var(--surface);border-radius:16px;padding:14px;margin-bottom:10px;}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  .row + .row{margin-top:12px;padding-top:12px;border-top:1px solid var(--border);}
+  .row-title{font-size:14px;font-weight:600;}
+  .row-sub{font-size:11.5px;color:var(--text-faint);margin-top:2px;}
+  .switch{position:relative;width:44px;height:26px;flex:none;border-radius:100px;background:var(--away-soft);border:1px solid var(--border);cursor:pointer;}
+  .switch.on{background:var(--accent);border-color:transparent;}
+  .switch .knob{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .15s ease;}
+  .switch.on .knob{transform:translateX(18px);}
+  .footnote{font-size:11.5px;color:var(--text-faint);text-align:center;margin-top:22px;line-height:1.7;}
+  .toast{position:fixed;left:20px;right:20px;bottom:24px;max-width:440px;margin:0 auto;background:var(--text);color:#fff;padding:12px 16px;border-radius:12px;font-size:13.5px;font-weight:600;text-align:center;opacity:0;transform:translateY(8px);pointer-events:none;transition:opacity .2s ease, transform .2s ease;}
+  .toast.show{opacity:1;transform:translateY(0);}
+  [hidden]{display:none !important;}
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <section id="join-view">
+    <span class="badge">🏠 タダイマップ Web版</span>
+    <h1>招待コードで参加</h1>
+    <p class="lead">アプリを入れていない端末からでも、家族の在宅状況を確認・共有できます。バックグラウンドでの自動判定はできないため、「ただいま」ボタンで手動で知らせる形になります。</p>
+
+    <label for="join-code">招待コード（6桁）</label>
+    <input type="text" id="join-code" inputmode="numeric" maxlength="6" placeholder="例：518748">
+
+    <label for="join-name">あなたの名前</label>
+    <input type="text" id="join-name" maxlength="12" placeholder="例：おばあちゃん">
+
+    <button class="btn btn-primary" id="join-submit" disabled>参加する</button>
+    <p class="hint" id="join-error"></p>
+  </section>
+
+  <section id="home-view" hidden>
+    <span class="badge" id="home-badge">🏠 わが家</span>
+    <h1 id="home-count">-</h1>
+    <p class="lead" id="home-sub">招待コード ------</p>
+
+    <button class="btn btn-accent" id="arrived-btn">「ただいま！」を送る</button>
+
+    <div id="member-list" style="margin-top:18px;"></div>
+
+    <div class="section-title">設定</div>
+    <div class="settings-card">
+      <div class="row">
+        <div>
+          <div class="row-title">名前</div>
+        </div>
+        <input type="text" id="settings-name" maxlength="12" style="text-align:right;border:none;background:transparent;font-weight:600;font-size:14px;color:var(--text);width:140px;">
+      </div>
+      <div class="row">
+        <div>
+          <div class="row-title">自分の名前を家族に表示する</div>
+          <div class="row-sub" id="showname-sub">家族の一覧に名前が表示されます</div>
+        </div>
+        <div class="switch on" id="switch-showname"><div class="knob"></div></div>
+      </div>
+    </div>
+
+    <button class="btn btn-danger" id="leave-btn">このブラウザをグループから外す</button>
+    <p class="footnote">この画面は自動更新されません。最新の状況を見るには再読み込みしてください。</p>
+  </section>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var STORAGE = {
+    deviceId: "tadaimap-web.deviceId",
+    groupId: "tadaimap-web.groupId",
+    memberId: "tadaimap-web.memberId",
+    myName: "tadaimap-web.myName",
+  };
+
+  function getOrCreateDeviceId() {
+    try {
+      var existing = localStorage.getItem(STORAGE.deviceId);
+      if (existing) return existing;
+      var id = "web-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+      localStorage.setItem(STORAGE.deviceId, id);
+      return id;
+    } catch (e) {
+      return "web-" + Math.random().toString(36).slice(2);
+    }
+  }
+
+  function storageGet(key) {
+    try { return localStorage.getItem(key); } catch (e) { return null; }
+  }
+  function storageSet(key, value) {
+    try { localStorage.setItem(key, value); } catch (e) {}
+  }
+  function storageRemove(key) {
+    try { localStorage.removeItem(key); } catch (e) {}
+  }
+
+  var deviceId = getOrCreateDeviceId();
+  var API_BASE = window.location.origin;
+
+  function el(id) { return document.getElementById(id); }
+
+  async function api(path, options) {
+    options = options || {};
+    var res = await fetch(API_BASE + path, {
+      method: options.method || "GET",
+      headers: Object.assign({ "Content-Type": "application/json", "x-device-id": deviceId }, options.headers || {}),
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+    var json = await res.json().catch(function () { return {}; });
+    if (!res.ok) {
+      var err = new Error((json.error && json.error.message) || "通信エラーが発生しました");
+      err.code = json.error && json.error.code;
+      throw err;
+    }
+    return json;
+  }
+
+  var toastTimer = null;
+  function showToast(text) {
+    var t = el("toast");
+    t.textContent = text;
+    t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.classList.remove("show"); }, 2600);
+  }
+
+  function formatTime(iso) {
+    var d = new Date(iso);
+    var hh = String(d.getHours()).padStart(2, "0");
+    var mm = String(d.getMinutes()).padStart(2, "0");
+    return hh + ":" + mm;
+  }
+
+  // ---------- Join view ----------
+  var joinCode = el("join-code");
+  var joinName = el("join-name");
+  var joinSubmit = el("join-submit");
+  var joinError = el("join-error");
+
+  function updateJoinButton() {
+    var codeOk = /^[0-9]{6}$/.test(joinCode.value);
+    var nameOk = joinName.value.trim().length > 0 && joinName.value.trim().length <= 12;
+    joinSubmit.disabled = !(codeOk && nameOk);
+  }
+  joinCode.addEventListener("input", function () {
+    joinCode.value = joinCode.value.replace(/[^0-9]/g, "").slice(0, 6);
+    updateJoinButton();
+  });
+  joinName.addEventListener("input", updateJoinButton);
+
+  joinSubmit.addEventListener("click", async function () {
+    joinError.textContent = "";
+    joinSubmit.disabled = true;
+    try {
+      var result = await api("/groups/join", {
+        method: "POST",
+        body: { deviceId: deviceId, inviteCode: joinCode.value, name: joinName.value.trim() },
+      });
+      storageSet(STORAGE.groupId, result.groupId);
+      storageSet(STORAGE.memberId, result.memberId);
+      storageSet(STORAGE.myName, joinName.value.trim());
+      showHomeView();
+    } catch (err) {
+      var messages = {
+        CODE_NOT_FOUND: "招待コードが見つかりません。もう一度確認してください。",
+        CODE_EXPIRED: "招待コードの有効期限が切れています。発行した方に再発行を依頼してください。",
+        ALREADY_JOINED: "この端末は既に別のグループに参加しています。",
+      };
+      joinError.textContent = messages[err.code] || err.message;
+      joinSubmit.disabled = false;
+    }
+  });
+
+  // ---------- Home view ----------
+  function renderMembers(members) {
+    var list = el("member-list");
+    list.innerHTML = "";
+    var home = 0;
+    members.forEach(function (m) {
+      if (m.status === "home") home++;
+      var card = document.createElement("div");
+      card.className = "card";
+      var initial = m.nameOrAnonymous.slice(0, 1);
+      card.innerHTML =
+        '<div class="avatar' + (m.isMe || m.nameOrAnonymous !== "メンバー" ? "" : " anon") + '">' + initial + "</div>" +
+        '<div class="info">' +
+          '<div class="name-row">' + m.nameOrAnonymous + (m.isMe ? ' <span class="me-tag">あなた</span>' : "") + "</div>" +
+          '<div class="time">' + (m.status === "home" ? "在宅 · " + formatTime(m.statusUpdatedAt) + "に帰宅" : "外出中 · " + formatTime(m.statusUpdatedAt) + "に外出") + "</div>" +
+        "</div>" +
+        '<div class="status ' + m.status + '">' + (m.status === "home" ? "在宅" : "外出中") + "</div>";
+      list.appendChild(card);
+    });
+    el("home-count").textContent = "現在" + home + "/" + members.length + "人 在宅中";
+  }
+
+  async function loadHome() {
+    var groupId = storageGet(STORAGE.groupId);
+    if (!groupId) return;
+    try {
+      var result = await api("/groups/" + groupId + "/members");
+      el("home-sub").textContent = "招待コード " + result.inviteCode;
+      renderMembers(result.members);
+      var me = result.members.find(function (m) { return m.isMe; });
+      if (me) {
+        el("switch-showname").classList.toggle("on", me.nameOrAnonymous !== "メンバー");
+      }
+    } catch (err) {
+      showToast(err.message);
+    }
+  }
+
+  el("arrived-btn").addEventListener("click", async function () {
+    var memberId = storageGet(STORAGE.memberId);
+    if (!memberId) return;
+    try {
+      await api("/members/" + memberId + "/status", { method: "PATCH", body: { deviceId: deviceId, status: "home", source: "manual" } });
+      showToast("家族に「ただいま」を伝えました");
+      loadHome();
+    } catch (err) {
+      showToast(err.message);
+    }
+  });
+
+  var settingsName = el("settings-name");
+  settingsName.addEventListener("change", async function () {
+    var memberId = storageGet(STORAGE.memberId);
+    var value = settingsName.value.trim();
+    if (!memberId || value.length === 0) return;
+    try {
+      await api("/members/" + memberId + "/profile", { method: "PATCH", body: { deviceId: deviceId, name: value } });
+      storageSet(STORAGE.myName, value);
+      showToast("名前を変更しました");
+      loadHome();
+    } catch (err) {
+      showToast(err.message);
+    }
+  });
+
+  el("switch-showname").addEventListener("click", async function () {
+    var memberId = storageGet(STORAGE.memberId);
+    if (!memberId) return;
+    var next = !el("switch-showname").classList.contains("on");
+    el("switch-showname").classList.toggle("on", next);
+    el("showname-sub").textContent = next ? "家族の一覧に名前が表示されます" : "家族の一覧には「メンバー」として表示されます";
+    try {
+      await api("/members/" + memberId + "/profile", { method: "PATCH", body: { deviceId: deviceId, showName: next } });
+      loadHome();
+    } catch (err) {
+      showToast(err.message);
+    }
+  });
+
+  el("leave-btn").addEventListener("click", async function () {
+    var memberId = storageGet(STORAGE.memberId);
+    if (!memberId) return;
+    if (!confirm("このブラウザをグループから外しますか？")) return;
+    try {
+      await api("/members/" + memberId, { method: "DELETE" });
+    } catch (err) {
+      // 退出済みなど、失敗しても画面はリセットする
+    }
+    storageRemove(STORAGE.groupId);
+    storageRemove(STORAGE.memberId);
+    storageRemove(STORAGE.myName);
+    showJoinView();
+  });
+
+  function showJoinView() {
+    el("join-view").hidden = false;
+    el("home-view").hidden = true;
+    joinCode.value = "";
+    joinName.value = "";
+    joinError.textContent = "";
+    updateJoinButton();
+  }
+
+  function showHomeView() {
+    el("join-view").hidden = true;
+    el("home-view").hidden = false;
+    settingsName.value = storageGet(STORAGE.myName) || "";
+    loadHome();
+  }
+
+  // ---------- Boot ----------
+  if (storageGet(STORAGE.groupId) && storageGet(STORAGE.memberId)) {
+    showHomeView();
+  } else {
+    showJoinView();
+  }
+})();
+</script>
+</body>
+</html>

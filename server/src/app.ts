@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+import path from "path";
 import cors from "cors";
 import express, { NextFunction, Request, Response } from "express";
 import { AppError } from "./errors";
@@ -47,6 +48,8 @@ export function createApp(repository: Repository, pushSender: PushSender) {
   const app = express();
   app.use(cors());
   app.use(express.json());
+  // ネイティブアプリを入れられない端末向けの簡易Web版(招待コード参加・一覧・手動更新のみ)
+  app.use(express.static(path.join(__dirname, "..", "public")));
 
   // F1: 家族グループの作成
   app.post(
