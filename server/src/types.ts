@@ -5,6 +5,8 @@ export interface Group {
   inviteCode: string;
   inviteCodeExpiresAt: string; // ISO8601
   createdAt: string; // ISO8601
+  /** "nearby"ステータスの表示名。グループ共通で、管理者だけが変更できる(初期値「施設内」)。 */
+  nearbyLabel: string;
 }
 
 export interface Member {
@@ -20,8 +22,6 @@ export interface Member {
   homeRadiusM: number | null;
   /** 自宅より一回り大きい「施設内」判定用の範囲(メートル)。homeRadiusM以上の値。 */
   buildingRadiusM: number | null;
-  /** "nearby"ステータスの表示名。本人が自由に設定できる(初期値「施設内」)。 */
-  nearbyLabel: string;
   notifyEnabled: boolean;
   pushToken: string | null;
   createdAt: string; // ISO8601
@@ -35,7 +35,7 @@ export interface MemberView {
   isMe: boolean;
   status: PresenceStatus;
   statusUpdatedAt: string;
-  /** status が "nearby" の場合に表示すべきラベル(本人が設定した呼び方)。 */
+  /** status が "nearby" の場合に表示すべきラベル(グループ共通・管理者が設定した呼び方)。 */
   nearbyLabel: string;
   /** このメンバーが管理者かどうか(管理者は家族一覧で分かるようにする)。 */
   isAdmin: boolean;

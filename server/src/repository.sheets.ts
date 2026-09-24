@@ -12,7 +12,14 @@ import { NEARBY_LABEL_DEFAULT } from "./validation";
 const GROUPS_SHEET = "Groups";
 const MEMBERS_SHEET = "Members";
 
-const GROUPS_COLUMNS = ["group_id", "invite_code", "invite_code_expires_at", "created_at"] as const;
+const GROUPS_COLUMNS = [
+  "group_id",
+  "invite_code",
+  "invite_code_expires_at",
+  "created_at",
+  // 呼び方のグループ共通化で追加(既存の行との互換性のため末尾に追加)
+  "nearby_label",
+] as const;
 const MEMBERS_COLUMNS = [
   "member_id",
   "group_id",
@@ -29,7 +36,9 @@ const MEMBERS_COLUMNS = [
   "created_at",
   // 施設内判定機能で追加(既存の行との互換性のため末尾に追加)
   "building_radius_m",
-  "nearby_label",
+  // 呼び方をグループ共通(Groupsシート側)に変更したため使用しない。
+  // 既存の行の列番号がずれないよう、列自体は残す。
+  "nearby_label_unused",
   // 管理者機能で追加(既存の行との互換性のため末尾に追加)
   "is_admin",
 ] as const;
@@ -140,11 +149,12 @@ export class SheetsRepository implements Repository {
       inviteCode: row[1],
       inviteCodeExpiresAt: row[2],
       createdAt: row[3],
+      nearbyLabel: row[4] || NEARBY_LABEL_DEFAULT,
     };
   }
 
   private groupToRow(g: Group): string[] {
-    return [g.groupId, g.inviteCode, g.inviteCodeExpiresAt, g.createdAt];
+    return [g.groupId, g.inviteCode, g.inviteCodeExpiresAt, g.createdAt, g.nearbyLabel];
   }
 
   private rowToMember(row: string[]): Member {
@@ -163,7 +173,7 @@ export class SheetsRepository implements Repository {
       pushToken: row[11] || null,
       createdAt: row[12],
       buildingRadiusM: toNumberOrNull(row[13]),
-      nearbyLabel: row[14] || NEARBY_LABEL_DEFAULT,
+      // row[14] (nearby_label_unused) は過去の名残の列。呼び方はGroups側で管理する。
       isAdmin: toBool(row[15]),
     };
   }
@@ -184,7 +194,7 @@ export class SheetsRepository implements Repository {
       m.pushToken ?? "",
       m.createdAt,
       m.buildingRadiusM ?? "",
-      m.nearbyLabel,
+      "",
       m.isAdmin,
     ];
   }
@@ -226,6 +236,7 @@ export class SheetsRepository implements Repository {
       inviteCode: await this.issueUniqueInviteCode(),
       inviteCodeExpiresAt: inviteCodeExpiryFrom(now),
       createdAt: now.toISOString(),
+      nearbyLabel: NEARBY_LABEL_DEFAULT,
     };
     const member: Member = {
       memberId: cryptoRandomId(),
@@ -239,7 +250,6 @@ export class SheetsRepository implements Repository {
       homeLng: null,
       homeRadiusM: null,
       buildingRadiusM: null,
-      nearbyLabel: NEARBY_LABEL_DEFAULT,
       notifyEnabled: true,
       pushToken: null,
       createdAt: now.toISOString(),
@@ -273,7 +283,6 @@ export class SheetsRepository implements Repository {
       homeLng: null,
       homeRadiusM: null,
       buildingRadiusM: null,
-      nearbyLabel: NEARBY_LABEL_DEFAULT,
       notifyEnabled: true,
       pushToken: null,
       createdAt: now.toISOString(),
@@ -363,14 +372,26 @@ export class SheetsRepository implements Repository {
   async updateProfile(
     memberId: string,
     deviceId: string,
-    fields: { name?: string; showName?: boolean; nearbyLabel?: string }
+    fields: { name?: string; showName?: boolean }
   ) {
     const { rowNumber, member } = await this.requireOwnedMemberRow(memberId, deviceId);
     if (fields.name !== undefined) member.name = fields.name.trim();
     if (fields.showName !== undefined) member.showName = fields.showName;
-    if (fields.nearbyLabel !== undefined) member.nearbyLabel = fields.nearbyLabel.trim();
     await this.updateRow(MEMBERS_SHEET, rowNumber, this.memberToRow(member));
     return member;
+  }
+
+  async updateGroupNearbyLabel(groupId: string, deviceId: string, nearbyLabel: string): Promise<Group> {
+    const found = await this.findGroupRow(groupId);
+    if (!found) throw new AppError("NOT_FOUND", "グループが見つかりません");
+    const requester = await this.getMemberByDeviceId(deviceId);
+    const groupMembers = await this.getMembersByGroup(groupId);
+    if (!requester || requester.groupId !== groupId || !isEffectiveAdmin(requester, groupMembers)) {
+      throw new AppError("FORBIDDEN", "呼び方を変更する権限がありません");
+    }
+    found.group.nearbyLabel = nearbyLabel.trim();
+    await this.updateRow(GROUPS_SHEET, found.rowNumber, this.groupToRow(found.group));
+    return found.group;
   }
 
   async updateNotify(memberId: string, deviceId: string, notifyEnabled: boolean) {

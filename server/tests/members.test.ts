@@ -142,14 +142,14 @@ describe("PATCH /members/:memberId/status", () => {
     expect(push.sent).toHaveLength(0);
   });
 
-  it('statusに"nearby"を指定でき、本人の呼び方(nearbyLabel)を使って通知される', async () => {
-    const { app, push, memberIdA, memberIdB } = await setupGroupWithTwoMembers();
+  it('statusに"nearby"を指定でき、グループ共通の呼び方(nearbyLabel)を使って通知される', async () => {
+    const { app, push, groupId, memberIdA, memberIdB } = await setupGroupWithTwoMembers();
 
     await request(app)
       .patch(`/members/${memberIdB}/push-token`)
       .send({ deviceId: "dev-2", pushToken: "ExponentPushToken[xxx]" });
     await request(app)
-      .patch(`/members/${memberIdA}/profile`)
+      .patch(`/groups/${groupId}/nearby-label`)
       .send({ deviceId: "dev-1", nearbyLabel: "ロビー" });
 
     const res = await request(app)
@@ -207,5 +207,49 @@ describe("PATCH /members/:memberId/profile", () => {
       .send({ deviceId: "dev-1", name: "パパ" });
 
     expect(res.status).toBe(200);
+  });
+});
+
+describe("PATCH /groups/:groupId/nearby-label", () => {
+  it("管理者は呼び方を変更でき、全メンバーに反映される", async () => {
+    const { app, groupId, memberIdA, memberIdB } = await setupGroupWithTwoMembers();
+
+    const res = await request(app)
+      .patch(`/groups/${groupId}/nearby-label`)
+      .send({ deviceId: "dev-1", nearbyLabel: "ロビー" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.nearbyLabel).toBe("ロビー");
+
+    const list = await request(app)
+      .get(`/groups/${groupId}/members`)
+      .set("x-device-id", "dev-2");
+    expect(list.body.nearbyLabel).toBe("ロビー");
+    const memberA = list.body.members.find((m: any) => m.memberId === memberIdA);
+    const memberB = list.body.members.find((m: any) => m.memberId === memberIdB);
+    expect(memberA.nearbyLabel).toBe("ロビー");
+    expect(memberB.nearbyLabel).toBe("ロビー");
+  });
+
+  it("管理者以外は呼び方を変更できずFORBIDDENになる", async () => {
+    const { app, groupId } = await setupGroupWithTwoMembers();
+
+    const res = await request(app)
+      .patch(`/groups/${groupId}/nearby-label`)
+      .send({ deviceId: "dev-2", nearbyLabel: "ロビー" });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe("FORBIDDEN");
+  });
+
+  it("13文字以上の呼び方はVALIDATION_ERRORになる", async () => {
+    const { app, groupId } = await setupGroupWithTwoMembers();
+
+    const res = await request(app)
+      .patch(`/groups/${groupId}/nearby-label`)
+      .send({ deviceId: "dev-1", nearbyLabel: "あ".repeat(13) });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
   });
 });

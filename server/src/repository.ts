@@ -35,8 +35,11 @@ export interface Repository {
   updateProfile(
     memberId: string,
     deviceId: string,
-    fields: { name?: string; showName?: boolean; nearbyLabel?: string }
+    fields: { name?: string; showName?: boolean }
   ): Promise<Member>;
+
+  /** "nearby"ステータスの呼び方(グループ共通)を変更する。管理者のみ実行できる。 */
+  updateGroupNearbyLabel(groupId: string, deviceId: string, nearbyLabel: string): Promise<Group>;
 
   updateNotify(
     memberId: string,

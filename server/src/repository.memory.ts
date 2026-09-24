@@ -24,6 +24,7 @@ export class MemoryRepository implements Repository {
       inviteCode: this.issueUniqueInviteCode(),
       inviteCodeExpiresAt: inviteCodeExpiryFrom(now),
       createdAt: now.toISOString(),
+      nearbyLabel: NEARBY_LABEL_DEFAULT,
     };
     const member: Member = {
       memberId: randomUUID(),
@@ -37,7 +38,6 @@ export class MemoryRepository implements Repository {
       homeLng: null,
       homeRadiusM: null,
       buildingRadiusM: null,
-      nearbyLabel: NEARBY_LABEL_DEFAULT,
       notifyEnabled: true,
       pushToken: null,
       createdAt: now.toISOString(),
@@ -78,7 +78,6 @@ export class MemoryRepository implements Repository {
       homeLng: null,
       homeRadiusM: null,
       buildingRadiusM: null,
-      nearbyLabel: NEARBY_LABEL_DEFAULT,
       notifyEnabled: true,
       pushToken: null,
       createdAt: now.toISOString(),
@@ -136,13 +135,26 @@ export class MemoryRepository implements Repository {
   async updateProfile(
     memberId: string,
     deviceId: string,
-    fields: { name?: string; showName?: boolean; nearbyLabel?: string }
+    fields: { name?: string; showName?: boolean }
   ): Promise<Member> {
     const member = this.requireOwnedMember(memberId, deviceId);
     if (fields.name !== undefined) member.name = fields.name.trim();
     if (fields.showName !== undefined) member.showName = fields.showName;
-    if (fields.nearbyLabel !== undefined) member.nearbyLabel = fields.nearbyLabel.trim();
     return member;
+  }
+
+  async updateGroupNearbyLabel(groupId: string, deviceId: string, nearbyLabel: string): Promise<Group> {
+    const group = this.groups.get(groupId);
+    if (!group) {
+      throw new AppError("NOT_FOUND", "グループが見つかりません");
+    }
+    const requester = await this.getMemberByDeviceId(deviceId);
+    const groupMembers = await this.getMembersByGroup(groupId);
+    if (!requester || requester.groupId !== groupId || !isEffectiveAdmin(requester, groupMembers)) {
+      throw new AppError("FORBIDDEN", "呼び方を変更する権限がありません");
+    }
+    group.nearbyLabel = nearbyLabel.trim();
+    return group;
   }
 
   async updateNotify(

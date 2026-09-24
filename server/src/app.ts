@@ -19,6 +19,7 @@ import {
   isValidNearbyLabel,
   isValidRadius,
   isValidStatus,
+  NEARBY_LABEL_DEFAULT,
 } from "./validation";
 
 function getDeviceId(req: Request): string | undefined {
@@ -27,7 +28,12 @@ function getDeviceId(req: Request): string | undefined {
   return fromBody ?? fromHeader ?? undefined;
 }
 
-function toMemberView(member: Member, requesterDeviceId: string | undefined, groupMembers: Member[]): MemberView {
+function toMemberView(
+  member: Member,
+  requesterDeviceId: string | undefined,
+  groupMembers: Member[],
+  groupNearbyLabel: string
+): MemberView {
   const isMe = member.deviceId === requesterDeviceId;
   const nameOrAnonymous = isMe || member.showName ? member.name : "メンバー";
   return {
@@ -36,7 +42,7 @@ function toMemberView(member: Member, requesterDeviceId: string | undefined, gro
     isMe,
     status: member.status,
     statusUpdatedAt: member.statusUpdatedAt,
-    nearbyLabel: member.nearbyLabel,
+    nearbyLabel: groupNearbyLabel,
     isAdmin: isEffectiveAdmin(member, groupMembers),
   };
 }
@@ -111,7 +117,8 @@ export function createApp(repository: Repository, pushSender: PushSender) {
       const members = await repository.getMembersByGroup(groupId);
       res.status(200).json({
         inviteCode: group.inviteCode,
-        members: members.map((m) => toMemberView(m, deviceId, members)),
+        nearbyLabel: group.nearbyLabel,
+        members: members.map((m) => toMemberView(m, deviceId, members, group.nearbyLabel)),
       });
     })
   );
@@ -160,7 +167,8 @@ export function createApp(repository: Repository, pushSender: PushSender) {
         );
       }
       const member = await repository.updateStatus(memberId, deviceId, status as PresenceStatus);
-      await notifyGroupOfStatusChange(repository, pushSender, member);
+      const group = await repository.getGroup(member.groupId);
+      await notifyGroupOfStatusChange(repository, pushSender, member, group?.nearbyLabel ?? NEARBY_LABEL_DEFAULT);
       res.status(200).json({ ok: true });
     })
   );
@@ -171,7 +179,7 @@ export function createApp(repository: Repository, pushSender: PushSender) {
     asyncHandler(async (req, res) => {
       const deviceId = getDeviceId(req);
       const { memberId } = req.params;
-      const { name, showName, nearbyLabel } = req.body ?? {};
+      const { name, showName } = req.body ?? {};
       if (!isValidDeviceId(deviceId)) {
         throw new AppError("VALIDATION_ERROR", "device_idは必須です");
       }
@@ -181,11 +189,26 @@ export function createApp(repository: Repository, pushSender: PushSender) {
       if (showName !== undefined && typeof showName !== "boolean") {
         throw new AppError("VALIDATION_ERROR", "show_nameはtrue/falseで指定してください");
       }
-      if (nearbyLabel !== undefined && !isValidNearbyLabel(nearbyLabel)) {
+      await repository.updateProfile(memberId, deviceId, { name, showName });
+      res.status(200).json({ ok: true });
+    })
+  );
+
+  // "nearby"ステータスの呼び方(グループ共通)の変更。管理者のみ実行できる。
+  app.patch(
+    "/groups/:groupId/nearby-label",
+    asyncHandler(async (req, res) => {
+      const deviceId = getDeviceId(req);
+      const { groupId } = req.params;
+      const { nearbyLabel } = req.body ?? {};
+      if (!isValidDeviceId(deviceId)) {
+        throw new AppError("VALIDATION_ERROR", "device_idは必須です");
+      }
+      if (!isValidNearbyLabel(nearbyLabel)) {
         throw new AppError("VALIDATION_ERROR", "呼び方は1〜12文字で入力してください");
       }
-      await repository.updateProfile(memberId, deviceId, { name, showName, nearbyLabel });
-      res.status(200).json({ ok: true });
+      const group = await repository.updateGroupNearbyLabel(groupId, deviceId, nearbyLabel);
+      res.status(200).json({ ok: true, nearbyLabel: group.nearbyLabel });
     })
   );
 
@@ -273,7 +296,8 @@ export function createApp(repository: Repository, pushSender: PushSender) {
 async function notifyGroupOfStatusChange(
   repository: Repository,
   pushSender: PushSender,
-  member: Member
+  member: Member,
+  nearbyLabel: string
 ): Promise<void> {
   const groupMembers = await repository.getMembersByGroup(member.groupId);
   const label = member.showName ? member.name : "家族の誰か";
@@ -281,7 +305,7 @@ async function notifyGroupOfStatusChange(
     member.status === "home"
       ? `${label}が帰宅しました`
       : member.status === "nearby"
-      ? `${label}が${member.nearbyLabel}に移動しました`
+      ? `${label}が${nearbyLabel}に移動しました`
       : `${label}が外出しました`;
   const targets = groupMembers.filter(
     (m) => m.memberId !== member.memberId && m.notifyEnabled && m.pushToken

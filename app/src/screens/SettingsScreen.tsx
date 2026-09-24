@@ -27,8 +27,10 @@ export default function SettingsScreen() {
     homeRadiusM,
     buildingRadiusM,
     nearbyLabel,
+    amIAdmin,
     inviteCode,
     saveProfile,
+    saveNearbyLabel,
     setNotifyEnabled,
     refreshInviteCode,
     leaveGroup,
@@ -46,8 +48,9 @@ export default function SettingsScreen() {
     }
     if (trimmed === nearbyLabel) return;
     try {
-      await saveProfile({ nearbyLabel: trimmed });
+      await saveNearbyLabel(trimmed);
     } catch {
+      setNearbyLabelDraft(nearbyLabel);
       Alert.alert("エラー", "呼び方の変更に失敗しました");
     }
   };
@@ -136,21 +139,30 @@ export default function SettingsScreen() {
             </View>
             <Switch value={showName} onValueChange={handleToggleShowName} />
           </View>
-          <View style={styles.divider} />
+        </View>
+
+        <Text style={styles.sectionTitle}>近くにいるときの呼び方</Text>
+        <View style={styles.card}>
           <View style={styles.row}>
             <View style={styles.rowTextBlock}>
-              <Text style={styles.rowTitle}>近くにいるときの呼び方</Text>
+              <Text style={styles.rowTitle}>呼び方</Text>
               <Text style={styles.rowSub}>
-                自宅の範囲外・施設内の範囲内にいるときに表示される名前です（例：施設内、ロビー）
+                {amIAdmin
+                  ? "自宅の範囲外・施設内の範囲内にいるとき、家族全員の表示に使われます（例：施設内、ロビー）"
+                  : "管理者が設定した呼び方です。自宅の範囲外・施設内の範囲内にいるときに表示されます"}
               </Text>
             </View>
-            <TextInput
-              style={styles.nameInput}
-              value={nearbyLabelDraft}
-              onChangeText={setNearbyLabelDraft}
-              onBlur={handleNearbyLabelBlur}
-              maxLength={NEARBY_LABEL_MAX_LENGTH}
-            />
+            {amIAdmin ? (
+              <TextInput
+                style={styles.nameInput}
+                value={nearbyLabelDraft}
+                onChangeText={setNearbyLabelDraft}
+                onBlur={handleNearbyLabelBlur}
+                maxLength={NEARBY_LABEL_MAX_LENGTH}
+              />
+            ) : (
+              <Text style={styles.nameInput}>{nearbyLabel}</Text>
+            )}
           </View>
         </View>
 

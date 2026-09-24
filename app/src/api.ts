@@ -39,6 +39,8 @@ export interface JoinGroupResult {
 
 export interface MembersListResult {
   inviteCode: string;
+  /** "nearby"ステータスの呼び方(グループ共通・管理者が設定)。 */
+  nearbyLabel: string;
   members: MemberView[];
 }
 
@@ -103,13 +105,17 @@ export class ApiClient {
     });
   }
 
-  updateProfile(
-    memberId: string,
-    fields: { name?: string; showName?: boolean; nearbyLabel?: string }
-  ): Promise<{ ok: true }> {
+  updateProfile(memberId: string, fields: { name?: string; showName?: boolean }): Promise<{ ok: true }> {
     return this.request(`/members/${memberId}/profile`, {
       method: "PATCH",
       body: { deviceId: this.deviceId, ...fields },
+    });
+  }
+
+  updateGroupNearbyLabel(groupId: string, nearbyLabel: string): Promise<{ ok: true; nearbyLabel: string }> {
+    return this.request(`/groups/${groupId}/nearby-label`, {
+      method: "PATCH",
+      body: { deviceId: this.deviceId, nearbyLabel },
     });
   }
 

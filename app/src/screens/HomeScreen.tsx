@@ -17,7 +17,7 @@ import { MemberView, PresenceStatus } from "../api";
 import { colors, radius, spacing, typography } from "../theme/tokens";
 
 export default function HomeScreen() {
-  const { members, inviteCode, refreshMembers, setStatus, setMemberStatus, nearbyLabel } = useApp();
+  const { members, inviteCode, refreshMembers, setStatus, setMemberStatus, nearbyLabel, amIAdmin } = useApp();
   const [refreshing, setRefreshing] = useState(false);
   const [sending, setSending] = useState(false);
 
@@ -44,7 +44,6 @@ export default function HomeScreen() {
   };
 
   const myStatus = members.find((m) => m.isMe)?.status;
-  const amIAdmin = members.find((m) => m.isMe)?.isAdmin ?? false;
 
   const handleAdminChangeStatus = (target: MemberView) => {
     Alert.alert(

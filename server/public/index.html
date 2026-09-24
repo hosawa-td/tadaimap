@@ -145,10 +145,11 @@
       </div>
       <div class="row">
         <div>
-          <div class="row-title">近くにいるときの呼び方</div>
-          <div class="row-sub">自宅の外・施設内の範囲内にいるときの表示名です</div>
+          <div class="row-title">呼び方</div>
+          <div class="row-sub" id="nearby-label-sub">自宅の外・施設内の範囲内にいるときの表示名です</div>
         </div>
-        <input type="text" id="settings-nearby-label" maxlength="12" style="text-align:right;border:none;background:transparent;font-weight:600;font-size:14px;color:var(--text);width:100px;">
+        <input type="text" id="settings-nearby-label" maxlength="12" hidden style="text-align:right;border:none;background:transparent;font-weight:600;font-size:14px;color:var(--text);width:100px;">
+        <span id="nearby-label-readonly" style="font-weight:600;font-size:14px;color:var(--text);"></span>
       </div>
     </div>
 
@@ -342,18 +343,27 @@
       var result = await api("/groups/" + groupId + "/members");
       el("home-sub").textContent = "招待コード " + result.inviteCode;
       var me = result.members.find(function (m) { return m.isMe; });
+      myNearbyLabel = result.nearbyLabel;
       if (me) {
         amIAdmin = !!me.isAdmin;
         myStatus = me.status;
-        myNearbyLabel = me.nearbyLabel;
       }
       renderMembers(result.members);
       el("admin-hint").hidden = !amIAdmin;
-      if (me) {
-        el("switch-showname").classList.toggle("on", me.nameOrAnonymous !== "メンバー");
+      el("settings-nearby-label").hidden = !amIAdmin;
+      el("nearby-label-readonly").hidden = amIAdmin;
+      el("nearby-label-sub").textContent = amIAdmin
+        ? "自宅の外・施設内の範囲内にいるとき、家族全員の表示に使われます"
+        : "管理者が設定した呼び方です";
+      if (amIAdmin) {
         if (document.activeElement !== el("settings-nearby-label")) {
           el("settings-nearby-label").value = myNearbyLabel;
         }
+      } else {
+        el("nearby-label-readonly").textContent = myNearbyLabel;
+      }
+      if (me) {
+        el("switch-showname").classList.toggle("on", me.nameOrAnonymous !== "メンバー");
         updateStatusSwitch();
       }
     } catch (err) {
@@ -427,14 +437,14 @@
 
   var settingsNearbyLabel = el("settings-nearby-label");
   settingsNearbyLabel.addEventListener("change", async function () {
-    var memberId = storageGet(STORAGE.memberId);
+    var groupId = storageGet(STORAGE.groupId);
     var value = settingsNearbyLabel.value.trim();
-    if (!memberId || value.length === 0) {
+    if (!groupId || value.length === 0) {
       settingsNearbyLabel.value = myNearbyLabel;
       return;
     }
     try {
-      await api("/members/" + memberId + "/profile", { method: "PATCH", body: { deviceId: deviceId, nearbyLabel: value } });
+      await api("/groups/" + groupId + "/nearby-label", { method: "PATCH", body: { deviceId: deviceId, nearbyLabel: value } });
       showToast("呼び方を変更しました");
       loadHome();
     } catch (err) {

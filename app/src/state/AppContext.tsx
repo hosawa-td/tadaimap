@@ -35,6 +35,7 @@ interface AppContextValue {
   homeRadiusM: number;
   buildingRadiusM: number;
   nearbyLabel: string;
+  amIAdmin: boolean;
   inviteCode: string | null;
   members: MemberView[];
   loading: boolean;
@@ -46,7 +47,8 @@ interface AppContextValue {
   saveHome: (lat: number, lng: number, homeRadiusM: number, buildingRadiusM: number) => Promise<void>;
   setStatus: (status: PresenceStatus, source: "auto" | "manual") => Promise<void>;
   setMemberStatus: (targetMemberId: string, status: PresenceStatus) => Promise<void>;
-  saveProfile: (fields: { name?: string; showName?: boolean; nearbyLabel?: string }) => Promise<void>;
+  saveProfile: (fields: { name?: string; showName?: boolean }) => Promise<void>;
+  saveNearbyLabel: (nearbyLabel: string) => Promise<void>;
   setNotifyEnabled: (value: boolean) => Promise<void>;
   refreshInviteCode: () => Promise<string>;
   leaveGroup: () => Promise<void>;
@@ -109,8 +111,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const result = await api.getMembers(groupId);
     setInviteCode(result.inviteCode);
     setMembers(result.members);
-    const me = result.members.find((m) => m.isMe);
-    if (me) setNearbyLabelState(me.nearbyLabel);
+    setNearbyLabelState(result.nearbyLabel);
   }, [api, groupId]);
 
   useEffect(() => {
@@ -201,16 +202,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const saveProfile = useCallback(
-    async (fields: { name?: string; showName?: boolean; nearbyLabel?: string }) => {
+    async (fields: { name?: string; showName?: boolean }) => {
       if (!api || !memberId) return;
       // 画面のスイッチ/入力欄がすぐに反映されるよう、通信の結果を待たず先に表示を更新する
       // (通信が失敗した場合は元の値に戻す)
       const previousName = myName;
       const previousShowName = showName;
-      const previousNearbyLabel = nearbyLabel;
       if (fields.name !== undefined) setMyName(fields.name);
       if (fields.showName !== undefined) setShowNameState(fields.showName);
-      if (fields.nearbyLabel !== undefined) setNearbyLabelState(fields.nearbyLabel);
       try {
         await withLoading(async () => {
           await api.updateProfile(memberId, fields);
@@ -219,11 +218,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       } catch (err) {
         setMyName(previousName);
         setShowNameState(previousShowName);
-        setNearbyLabelState(previousNearbyLabel);
         throw err;
       }
     },
-    [api, memberId, myName, showName, nearbyLabel, refreshMembers, withLoading]
+    [api, memberId, myName, showName, refreshMembers, withLoading]
+  );
+
+  const saveNearbyLabel = useCallback(
+    async (label: string) => {
+      if (!api || !groupId) return;
+      // 管理者が全員分の呼び方をまとめて変更する(権限の判定はサーバー側で行う)
+      const previous = nearbyLabel;
+      setNearbyLabelState(label);
+      try {
+        await withLoading(async () => {
+          await api.updateGroupNearbyLabel(groupId, label);
+          await refreshMembers();
+        });
+      } catch (err) {
+        setNearbyLabelState(previous);
+        throw err;
+      }
+    },
+    [api, groupId, nearbyLabel, refreshMembers, withLoading]
   );
 
   const setNotifyEnabled = useCallback(
@@ -274,6 +291,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, [api, memberId, withLoading]);
 
+  const amIAdmin = members.find((m) => m.isMe)?.isAdmin ?? false;
+
   const value: AppContextValue = {
     ready,
     hasGroup: !!(groupId && memberId),
@@ -286,6 +305,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     homeRadiusM,
     buildingRadiusM,
     nearbyLabel,
+    amIAdmin,
     inviteCode,
     members,
     loading,
@@ -297,6 +317,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setStatus,
     setMemberStatus,
     saveProfile,
+    saveNearbyLabel,
     setNotifyEnabled,
     refreshInviteCode,
     leaveGroup,
