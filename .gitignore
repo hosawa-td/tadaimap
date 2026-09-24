@@ -8,6 +8,8 @@ npm-debug.log*
 !.env.example
 *.json.key
 service-account*.json
+google-services.json
+firebase-adminsdk*.json
 
 # Expo / React Native
 .expo/

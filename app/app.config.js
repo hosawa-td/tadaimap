@@ -31,6 +31,7 @@ module.exports = {
         foregroundImage: "./assets/adaptive-icon.png",
         backgroundColor: "#FDF8F0",
       },
+      googleServicesFile: process.env.GOOGLE_SERVICES_JSON || "./google-services.json",
       config: {
         googleMaps: {
           apiKey: process.env.GOOGLE_MAPS_API_KEY,
