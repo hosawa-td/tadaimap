@@ -27,7 +27,7 @@ module.exports = {
     },
     android: {
       package: "com.tadaimap.app",
-      versionCode: 1,
+      versionCode: 2,
       adaptiveIcon: {
         foregroundImage: "./assets/adaptive-icon.png",
         backgroundColor: "#FDF8F0",
