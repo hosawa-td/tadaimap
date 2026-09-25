@@ -41,6 +41,8 @@ const MEMBERS_COLUMNS = [
   "nearby_label_unused",
   // 管理者機能で追加(既存の行との互換性のため末尾に追加)
   "is_admin",
+  // Web版のプッシュ通知(Web Push)対応で追加(既存の行との互換性のため末尾に追加)
+  "web_push_subscription",
 ] as const;
 
 /**
@@ -175,6 +177,7 @@ export class SheetsRepository implements Repository {
       buildingRadiusM: toNumberOrNull(row[13]),
       // row[14] (nearby_label_unused) は過去の名残の列。呼び方はGroups側で管理する。
       isAdmin: toBool(row[15]),
+      webPushSubscription: row[16] || null,
     };
   }
 
@@ -196,6 +199,7 @@ export class SheetsRepository implements Repository {
       m.buildingRadiusM ?? "",
       "",
       m.isAdmin,
+      m.webPushSubscription ?? "",
     ];
   }
 
@@ -252,6 +256,7 @@ export class SheetsRepository implements Repository {
       buildingRadiusM: null,
       notifyEnabled: true,
       pushToken: null,
+      webPushSubscription: null,
       createdAt: now.toISOString(),
       isAdmin: true,
     };
@@ -285,6 +290,7 @@ export class SheetsRepository implements Repository {
       buildingRadiusM: null,
       notifyEnabled: true,
       pushToken: null,
+      webPushSubscription: null,
       createdAt: now.toISOString(),
       isAdmin: false,
     };
@@ -404,6 +410,13 @@ export class SheetsRepository implements Repository {
   async updatePushToken(memberId: string, deviceId: string, pushToken: string) {
     const { rowNumber, member } = await this.requireOwnedMemberRow(memberId, deviceId);
     member.pushToken = pushToken;
+    await this.updateRow(MEMBERS_SHEET, rowNumber, this.memberToRow(member));
+    return member;
+  }
+
+  async updateWebPushSubscription(memberId: string, deviceId: string, subscription: string | null) {
+    const { rowNumber, member } = await this.requireOwnedMemberRow(memberId, deviceId);
+    member.webPushSubscription = subscription;
     await this.updateRow(MEMBERS_SHEET, rowNumber, this.memberToRow(member));
     return member;
   }

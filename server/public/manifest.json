@@ -1,0 +1,11 @@
+{
+  "name": "タダイマップ",
+  "short_name": "タダイマップ",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FDF8F0",
+  "theme_color": "#D9920A",
+  "icons": [
+    { "src": "/icon.png", "sizes": "1024x1024", "type": "image/png" }
+  ]
+}

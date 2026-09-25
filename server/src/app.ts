@@ -9,6 +9,7 @@ import { isEffectiveAdmin, Repository } from "./repository";
 import { MemoryRepository } from "./repository.memory";
 import { SheetsRepository } from "./repository.sheets";
 import { PushSender, ExpoPushSender } from "./push";
+import { WebPushSender, NoopWebPushSender, VapidWebPushSender, WebPushSubscription } from "./webpush";
 import { Member, MemberView, PresenceStatus } from "./types";
 import {
   isValidBuildingRadius,
@@ -19,6 +20,7 @@ import {
   isValidNearbyLabel,
   isValidRadius,
   isValidStatus,
+  isValidWebPushSubscription,
   NEARBY_LABEL_DEFAULT,
 } from "./validation";
 
@@ -55,7 +57,11 @@ function asyncHandler(
   };
 }
 
-export function createApp(repository: Repository, pushSender: PushSender) {
+export function createApp(
+  repository: Repository,
+  pushSender: PushSender,
+  webPushSender: WebPushSender = new NoopWebPushSender()
+) {
   const app = express();
   app.use(cors());
   app.use(express.json());
@@ -168,7 +174,13 @@ export function createApp(repository: Repository, pushSender: PushSender) {
       }
       const member = await repository.updateStatus(memberId, deviceId, status as PresenceStatus);
       const group = await repository.getGroup(member.groupId);
-      await notifyGroupOfStatusChange(repository, pushSender, member, group?.nearbyLabel ?? NEARBY_LABEL_DEFAULT);
+      await notifyGroupOfStatusChange(
+        repository,
+        pushSender,
+        webPushSender,
+        member,
+        group?.nearbyLabel ?? NEARBY_LABEL_DEFAULT
+      );
       res.status(200).json({ ok: true });
     })
   );
@@ -230,7 +242,7 @@ export function createApp(repository: Repository, pushSender: PushSender) {
     })
   );
 
-  // プッシュ通知トークンの登録
+  // プッシュ通知トークンの登録(ネイティブアプリ向け)
   app.patch(
     "/members/:memberId/push-token",
     asyncHandler(async (req, res) => {
@@ -244,6 +256,36 @@ export function createApp(repository: Repository, pushSender: PushSender) {
         throw new AppError("VALIDATION_ERROR", "push_tokenは必須です");
       }
       await repository.updatePushToken(memberId, deviceId, pushToken);
+      res.status(200).json({ ok: true });
+    })
+  );
+
+  // Web版のプッシュ通知(Web Push)を送るための公開鍵を返す
+  app.get(
+    "/push/vapid-public-key",
+    (req, res) => {
+      res.status(200).json({ publicKey: process.env.VAPID_PUBLIC_KEY ?? null });
+    }
+  );
+
+  // Web版のプッシュ通知(Web Push)の購読情報の登録・解除
+  app.patch(
+    "/members/:memberId/web-push-subscription",
+    asyncHandler(async (req, res) => {
+      const deviceId = getDeviceId(req);
+      const { memberId } = req.params;
+      const { subscription } = req.body ?? {};
+      if (!isValidDeviceId(deviceId)) {
+        throw new AppError("VALIDATION_ERROR", "device_idは必須です");
+      }
+      if (subscription !== null && !isValidWebPushSubscription(subscription)) {
+        throw new AppError("VALIDATION_ERROR", "subscriptionの形式が不正です");
+      }
+      await repository.updateWebPushSubscription(
+        memberId,
+        deviceId,
+        subscription === null ? null : JSON.stringify(subscription)
+      );
       res.status(200).json({ ok: true });
     })
   );
@@ -296,6 +338,7 @@ export function createApp(repository: Repository, pushSender: PushSender) {
 async function notifyGroupOfStatusChange(
   repository: Repository,
   pushSender: PushSender,
+  webPushSender: WebPushSender,
   member: Member,
   nearbyLabel: string
 ): Promise<void> {
@@ -307,12 +350,21 @@ async function notifyGroupOfStatusChange(
       : member.status === "nearby"
       ? `${label}が${nearbyLabel}に移動しました`
       : `${label}が外出しました`;
-  const targets = groupMembers.filter(
-    (m) => m.memberId !== member.memberId && m.notifyEnabled && m.pushToken
-  );
-  await pushSender.send(
-    targets.map((m) => ({ to: m.pushToken as string, title: "タダイマップ", body }))
-  );
+  const targets = groupMembers.filter((m) => m.memberId !== member.memberId && m.notifyEnabled);
+  const nativeTargets = targets.filter((m) => m.pushToken);
+  const webTargets = targets.filter((m) => m.webPushSubscription);
+  await Promise.all([
+    pushSender.send(
+      nativeTargets.map((m) => ({ to: m.pushToken as string, title: "タダイマップ", body }))
+    ),
+    webPushSender.send(
+      webTargets.map((m) => ({
+        subscription: JSON.parse(m.webPushSubscription as string) as WebPushSubscription,
+        title: "タダイマップ",
+        body,
+      }))
+    ),
+  ]);
 }
 
 function buildProductionRepository(): Repository {
@@ -327,9 +379,21 @@ function buildProductionRepository(): Repository {
   return new MemoryRepository();
 }
 
+function buildProductionWebPushSender(): WebPushSender {
+  const { VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT } = process.env;
+  if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY && VAPID_SUBJECT) {
+    return new VapidWebPushSender(VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT);
+  }
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[起動] Web Push用の鍵(.env)が見つからないため、Web版へのプッシュ通知は送信されません。"
+  );
+  return new NoopWebPushSender();
+}
+
 /**
  * Vercel(Express向けのゼロコンフィグ実行)向けのデフォルトエクスポート。
  * ローカル開発でサーバーを起動する場合は index.ts (app.listen) を使う。
  * テストは名前付きエクスポートの createApp() を使い、依存関係を差し替える。
  */
-export default createApp(buildProductionRepository(), new ExpoPushSender());
+export default createApp(buildProductionRepository(), new ExpoPushSender(), buildProductionWebPushSender());

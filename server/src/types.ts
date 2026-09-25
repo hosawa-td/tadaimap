@@ -23,7 +23,10 @@ export interface Member {
   /** 自宅より一回り大きい「施設内」判定用の範囲(メートル)。homeRadiusM以上の値。 */
   buildingRadiusM: number | null;
   notifyEnabled: boolean;
+  /** ネイティブアプリ(Expo)のプッシュ通知トークン。 */
   pushToken: string | null;
+  /** Web版のプッシュ通知(Web Push)の購読情報。JSON文字列({endpoint, keys})で保持する。 */
+  webPushSubscription: string | null;
   createdAt: string; // ISO8601
   /** グループを作成した人が管理者。管理者は他のメンバーの状態も手動で変更できる。 */
   isAdmin: boolean;

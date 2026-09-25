@@ -65,3 +65,20 @@ export function isValidLatLng(lat: unknown, lng: unknown): boolean {
 export function isValidDeviceId(deviceId: unknown): deviceId is string {
   return typeof deviceId === "string" && deviceId.trim().length > 0;
 }
+
+/** Web Push購読情報({endpoint, keys: {p256dh, auth}})の形をしているか検証する。 */
+export function isValidWebPushSubscription(
+  subscription: unknown
+): subscription is { endpoint: string; keys: { p256dh: string; auth: string } } {
+  if (typeof subscription !== "object" || subscription === null) return false;
+  const sub = subscription as Record<string, unknown>;
+  if (typeof sub.endpoint !== "string" || sub.endpoint.trim().length === 0) return false;
+  if (typeof sub.keys !== "object" || sub.keys === null) return false;
+  const keys = sub.keys as Record<string, unknown>;
+  return (
+    typeof keys.p256dh === "string" &&
+    keys.p256dh.length > 0 &&
+    typeof keys.auth === "string" &&
+    keys.auth.length > 0
+  );
+}

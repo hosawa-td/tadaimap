@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>タダイマップ Web版</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="タダイマップ">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#D9920A">
 <style>
   :root{
     --bg:#FDF8F0;
@@ -153,6 +159,18 @@
       </div>
     </div>
 
+    <div class="section-title">通知</div>
+    <div class="settings-card">
+      <div class="row">
+        <div>
+          <div class="row-title">帰宅・外出のプッシュ通知</div>
+          <div class="row-sub" id="notify-sub">家族の誰かの状態が変わったときに知らせます</div>
+        </div>
+        <div class="switch" id="switch-notify"><div class="knob"></div></div>
+      </div>
+    </div>
+    <p class="hint" id="notify-hint" style="text-align:center;" hidden></p>
+
     <button class="btn btn-danger" id="leave-btn">このブラウザをグループから外す</button>
     <p class="footnote">この画面は自動更新されません。最新の状況を見るには再読み込みしてください。</p>
   </section>
@@ -180,6 +198,7 @@
     groupId: "tadaimap-web.groupId",
     memberId: "tadaimap-web.memberId",
     myName: "tadaimap-web.myName",
+    notifyEnabled: "tadaimap-web.notifyEnabled",
   };
 
   function getOrCreateDeviceId() {
@@ -366,6 +385,7 @@
         el("switch-showname").classList.toggle("on", me.nameOrAnonymous !== "メンバー");
         updateStatusSwitch();
       }
+      el("switch-notify").classList.toggle("on", storageGet(STORAGE.notifyEnabled) === "1");
     } catch (err) {
       showToast(err.message);
     }
@@ -452,6 +472,114 @@
     }
   });
 
+  // ---------- Web Push通知 ----------
+  function isIOS() {
+    return /iP(hone|od|ad)/.test(navigator.userAgent);
+  }
+  function isStandalone() {
+    return window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  }
+  function pushSupported() {
+    return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  }
+  function urlBase64ToUint8Array(base64String) {
+    var padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    var base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    var rawData = atob(base64);
+    var outputArray = new Uint8Array(rawData.length);
+    for (var i = 0; i < rawData.length; i++) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  }
+
+  async function enableWebPush() {
+    if (!pushSupported()) {
+      if (isIOS() && !isStandalone()) {
+        return {
+          ok: false,
+          message:
+            "iPhoneでは、このページを一度ホーム画面に追加してから、そのアイコンで開いた場合のみ通知を受け取れます。共有ボタン→「ホーム画面に追加」をお試しください。",
+        };
+      }
+      return { ok: false, message: "お使いのブラウザは通知に対応していません。" };
+    }
+    var permission = await Notification.requestPermission();
+    if (permission !== "granted") {
+      return { ok: false, message: "通知が許可されませんでした。端末の設定から許可してください。" };
+    }
+    var keyRes = await api("/push/vapid-public-key");
+    if (!keyRes.publicKey) {
+      return { ok: false, message: "サーバー側の通知設定が完了していません。" };
+    }
+    var reg = await navigator.serviceWorker.register("/sw.js");
+    await navigator.serviceWorker.ready;
+    var subscription = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(keyRes.publicKey),
+    });
+    var memberId = storageGet(STORAGE.memberId);
+    await api("/members/" + memberId + "/web-push-subscription", {
+      method: "PATCH",
+      body: { deviceId: deviceId, subscription: subscription.toJSON() },
+    });
+    await api("/members/" + memberId + "/notify", {
+      method: "PATCH",
+      body: { deviceId: deviceId, notifyEnabled: true },
+    });
+    return { ok: true };
+  }
+
+  async function disableWebPush() {
+    try {
+      if ("serviceWorker" in navigator) {
+        var reg = await navigator.serviceWorker.getRegistration("/sw.js");
+        if (reg) {
+          var sub = await reg.pushManager.getSubscription();
+          if (sub) await sub.unsubscribe();
+        }
+      }
+    } catch (e) {
+      // 解除に失敗しても、サーバー側の購読情報は消すので致命的ではない
+    }
+    var memberId = storageGet(STORAGE.memberId);
+    if (!memberId) return;
+    await api("/members/" + memberId + "/web-push-subscription", {
+      method: "PATCH",
+      body: { deviceId: deviceId, subscription: null },
+    });
+    await api("/members/" + memberId + "/notify", {
+      method: "PATCH",
+      body: { deviceId: deviceId, notifyEnabled: false },
+    });
+  }
+
+  el("switch-notify").addEventListener("click", async function () {
+    var switchEl = el("switch-notify");
+    var hint = el("notify-hint");
+    hint.hidden = true;
+    var next = !switchEl.classList.contains("on");
+    try {
+      if (next) {
+        var result = await enableWebPush();
+        if (!result.ok) {
+          hint.hidden = false;
+          hint.textContent = result.message;
+          return;
+        }
+        switchEl.classList.add("on");
+        storageSet(STORAGE.notifyEnabled, "1");
+      } else {
+        switchEl.classList.remove("on");
+        await disableWebPush();
+        storageSet(STORAGE.notifyEnabled, "0");
+      }
+    } catch (err) {
+      hint.hidden = false;
+      hint.textContent = "通知の設定に失敗しました。" + (err && err.message ? err.message : "");
+    }
+  });
+
   el("switch-showname").addEventListener("click", async function () {
     var memberId = storageGet(STORAGE.memberId);
     if (!memberId) return;
@@ -478,6 +606,7 @@
     storageRemove(STORAGE.groupId);
     storageRemove(STORAGE.memberId);
     storageRemove(STORAGE.myName);
+    storageRemove(STORAGE.notifyEnabled);
     showJoinView();
   });
 

@@ -40,6 +40,7 @@ export class MemoryRepository implements Repository {
       buildingRadiusM: null,
       notifyEnabled: true,
       pushToken: null,
+      webPushSubscription: null,
       createdAt: now.toISOString(),
       isAdmin: true,
     };
@@ -80,6 +81,7 @@ export class MemoryRepository implements Repository {
       buildingRadiusM: null,
       notifyEnabled: true,
       pushToken: null,
+      webPushSubscription: null,
       createdAt: now.toISOString(),
       isAdmin: false,
     };
@@ -174,6 +176,16 @@ export class MemoryRepository implements Repository {
   ): Promise<Member> {
     const member = this.requireOwnedMember(memberId, deviceId);
     member.pushToken = pushToken;
+    return member;
+  }
+
+  async updateWebPushSubscription(
+    memberId: string,
+    deviceId: string,
+    subscription: string | null
+  ): Promise<Member> {
+    const member = this.requireOwnedMember(memberId, deviceId);
+    member.webPushSubscription = subscription;
     return member;
   }
 

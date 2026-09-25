@@ -53,6 +53,13 @@ export interface Repository {
     pushToken: string
   ): Promise<Member>;
 
+  /** Web版のプッシュ通知(Web Push)の購読情報を登録・解除する。nullで解除。 */
+  updateWebPushSubscription(
+    memberId: string,
+    deviceId: string,
+    subscription: string | null
+  ): Promise<Member>;
+
   refreshInviteCode(groupId: string, deviceId: string): Promise<Group>;
 
   leaveGroup(memberId: string, deviceId: string): Promise<void>;
