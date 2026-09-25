@@ -68,6 +68,7 @@
   .me-tag{font-size:10px;font-weight:700;color:var(--text-faint);background:var(--surface-sand);border-radius:6px;padding:1px 6px;}
   .admin-tag{font-size:10px;font-weight:700;color:var(--home);background:var(--home-soft);border-radius:6px;padding:1px 6px;}
   .time{font-size:12px;color:var(--text-faint);margin-top:2px;}
+  .home-detail{font-size:12px;color:var(--accent);font-weight:700;margin-top:2px;}
   .status{flex:none;font-size:12px;font-weight:700;padding:6px 11px;border-radius:100px;}
   .status.home{background:var(--home-soft);color:var(--home);}
   .status.nearby{background:var(--nearby-soft);color:var(--nearby);}
@@ -130,6 +131,8 @@
       <button type="button" data-status="away">外出中</button>
     </div>
     <p class="hint" id="status-hint" style="text-align:center;">自動では切り替わりません。状態が変わったときに、その都度ボタンを押してください。</p>
+
+    <input type="text" id="home-detail-input" maxlength="12" placeholder="トイレ中・入浴中 など（任意）" hidden style="text-align:center;margin-bottom:6px;">
 
     <div id="member-list" style="margin-top:18px;"></div>
     <p class="hint" id="admin-hint" style="text-align:center;" hidden>管理者として、家族の名前をタップすると代わりに状態を変更できます</p>
@@ -331,6 +334,7 @@
             (m.isAdmin ? ' <span class="admin-tag">管理者</span>' : "") +
           "</div>" +
           '<div class="time">' + statusLine(m) + "</div>" +
+          (m.status === "home" && m.homeDetail ? '<div class="home-detail">' + m.homeDetail + "</div>" : "") +
         "</div>" +
         '<div class="status ' + m.status + '">' + statusLabel(m) + "</div>";
       if (clickable) {
@@ -343,6 +347,7 @@
 
   var myStatus = "away";
   var myNearbyLabel = "施設内";
+  var myHomeDetail = "";
   var amIAdmin = false;
 
   function updateStatusSwitch() {
@@ -366,8 +371,13 @@
       if (me) {
         amIAdmin = !!me.isAdmin;
         myStatus = me.status;
+        myHomeDetail = me.homeDetail || "";
       }
       renderMembers(result.members);
+      el("home-detail-input").hidden = myStatus !== "home";
+      if (myStatus === "home" && document.activeElement !== el("home-detail-input")) {
+        el("home-detail-input").value = myHomeDetail;
+      }
       el("admin-hint").hidden = !amIAdmin;
       el("settings-nearby-label").hidden = !amIAdmin;
       el("nearby-label-readonly").hidden = amIAdmin;
@@ -468,6 +478,21 @@
       showToast("呼び方を変更しました");
       loadHome();
     } catch (err) {
+      showToast(err.message);
+    }
+  });
+
+  var homeDetailInput = el("home-detail-input");
+  homeDetailInput.addEventListener("change", async function () {
+    var memberId = storageGet(STORAGE.memberId);
+    if (!memberId) return;
+    var value = homeDetailInput.value.trim();
+    if (value === myHomeDetail) return;
+    try {
+      await api("/members/" + memberId + "/home-detail", { method: "PATCH", body: { deviceId: deviceId, homeDetail: value } });
+      loadHome();
+    } catch (err) {
+      homeDetailInput.value = myHomeDetail;
       showToast(err.message);
     }
   });
