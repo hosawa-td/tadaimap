@@ -475,13 +475,27 @@
   // ---------- Web Push通知 ----------
   if ("serviceWorker" in navigator) {
     // 通知が届いた瞬間に、Service Workerからの合図でその場で一覧を最新化する
-    // (通知が届いてから、手動で再読み込みするまで待たせないため)
+    // (画面がバックグラウンドで停止している間はこのメッセージが届かないこともあるため、
+    // それを補う形で下の visibilitychange でも更新する)
     navigator.serviceWorker.addEventListener("message", function (event) {
       if (event.data && event.data.type === "tadaimap-refresh") {
         loadHome();
       }
     });
   }
+
+  // 通知をタップして開いた・ホーム画面から再度開いた・他のアプリから戻ってきた、など
+  // 画面が改めて見える状態になったタイミングでも一覧を最新化する
+  // (iPhoneでは画面が裏に回っている間はJSが止まっており、pushイベントの合図が
+  // 届かないことがあるため、こちらがより確実な更新のきっかけになる)
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") {
+      loadHome();
+    }
+  });
+  window.addEventListener("pageshow", function () {
+    loadHome();
+  });
 
   function isIOS() {
     return /iP(hone|od|ad)/.test(navigator.userAgent);

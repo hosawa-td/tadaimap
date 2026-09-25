@@ -2,6 +2,16 @@
 // このファイルはオリジン直下(/sw.js)に置くことで、サイト全体に対する
 // プッシュ通知を受け取れるようにする。
 
+self.addEventListener("install", function (event) {
+  event.waitUntil(self.skipWaiting());
+});
+
+self.addEventListener("activate", function (event) {
+  // 登録直後から、既に開いている画面もこのService Workerの制御下に置く
+  // (そうしないと、開いたままの画面にpush時のメッセージが届かないことがある)
+  event.waitUntil(self.clients.claim());
+});
+
 self.addEventListener("push", function (event) {
   var data = {};
   try {
