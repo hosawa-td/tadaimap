@@ -26,11 +26,15 @@ export interface Repository {
     buildingRadiusM: number
   ): Promise<Member>;
 
+  /** 状態(status)を変更する。あわせて homeDetail は自動的に空へ戻す。 */
   updateStatus(
     memberId: string,
     deviceId: string,
     status: PresenceStatus
   ): Promise<Member>;
+
+  /** 在宅中の詳細な状態(例:「トイレ中」)を変更する。本人のみ実行できる。 */
+  updateHomeDetail(memberId: string, deviceId: string, homeDetail: string): Promise<Member>;
 
   updateProfile(
     memberId: string,

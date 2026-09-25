@@ -14,6 +14,7 @@ import { Member, MemberView, PresenceStatus } from "./types";
 import {
   isValidBuildingRadius,
   isValidDeviceId,
+  isValidHomeDetail,
   isValidInviteCode,
   isValidLatLng,
   isValidName,
@@ -45,6 +46,7 @@ function toMemberView(
     status: member.status,
     statusUpdatedAt: member.statusUpdatedAt,
     nearbyLabel: groupNearbyLabel,
+    homeDetail: member.homeDetail,
     isAdmin: isEffectiveAdmin(member, groupMembers),
   };
 }
@@ -209,6 +211,24 @@ export function createApp(
       }
       await repository.updateProfile(memberId, deviceId, { name, showName });
       res.status(200).json({ ok: true });
+    })
+  );
+
+  // 在宅中の詳細な状態(トイレ中など)の変更。本人のみ実行できる。
+  app.patch(
+    "/members/:memberId/home-detail",
+    asyncHandler(async (req, res) => {
+      const deviceId = getDeviceId(req);
+      const { memberId } = req.params;
+      const { homeDetail } = req.body ?? {};
+      if (!isValidDeviceId(deviceId)) {
+        throw new AppError("VALIDATION_ERROR", "device_idは必須です");
+      }
+      if (!isValidHomeDetail(homeDetail)) {
+        throw new AppError("VALIDATION_ERROR", "詳細な状態は12文字以内で入力してください");
+      }
+      const member = await repository.updateHomeDetail(memberId, deviceId, homeDetail);
+      res.status(200).json({ ok: true, homeDetail: member.homeDetail });
     })
   );
 

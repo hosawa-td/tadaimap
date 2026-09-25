@@ -7,6 +7,7 @@ export const BUILDING_RADIUS_MAX = 2000;
 export const BUILDING_RADIUS_DEFAULT = 300;
 export const NEARBY_LABEL_MAX_LENGTH = 12;
 export const NEARBY_LABEL_DEFAULT = "施設内";
+export const HOME_DETAIL_MAX_LENGTH = 12;
 
 export function isValidName(name: string): boolean {
   const trimmed = name.trim();
@@ -33,4 +34,9 @@ export function isValidBuildingRadius(radius: number, homeRadiusM: number): bool
 export function isValidNearbyLabel(label: string): boolean {
   const trimmed = label.trim();
   return trimmed.length > 0 && trimmed.length <= NEARBY_LABEL_MAX_LENGTH;
+}
+
+/** 在宅中の詳細な状態(例:「トイレ中」)。空文字(未設定に戻す)も許可する。 */
+export function isValidHomeDetail(detail: string): boolean {
+  return detail.trim().length <= HOME_DETAIL_MAX_LENGTH;
 }

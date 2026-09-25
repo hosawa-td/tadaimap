@@ -49,6 +49,7 @@ interface AppContextValue {
   setMemberStatus: (targetMemberId: string, status: PresenceStatus) => Promise<void>;
   saveProfile: (fields: { name?: string; showName?: boolean }) => Promise<void>;
   saveNearbyLabel: (nearbyLabel: string) => Promise<void>;
+  saveHomeDetail: (homeDetail: string) => Promise<void>;
   setNotifyEnabled: (value: boolean) => Promise<void>;
   refreshInviteCode: () => Promise<string>;
   leaveGroup: () => Promise<void>;
@@ -243,6 +244,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [api, groupId, nearbyLabel, refreshMembers, withLoading]
   );
 
+  const saveHomeDetail = useCallback(
+    async (homeDetail: string) => {
+      if (!api || !memberId) return;
+      await withLoading(async () => {
+        await api.updateHomeDetail(memberId, homeDetail);
+        await refreshMembers();
+      });
+    },
+    [api, memberId, refreshMembers, withLoading]
+  );
+
   const setNotifyEnabled = useCallback(
     async (value: boolean) => {
       if (!api || !memberId) return;
@@ -318,6 +330,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setMemberStatus,
     saveProfile,
     saveNearbyLabel,
+    saveHomeDetail,
     setNotifyEnabled,
     refreshInviteCode,
     leaveGroup,

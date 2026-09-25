@@ -1,4 +1,11 @@
-import { countHome, formatStatusLine, formatTime, statusLabel, summaryText } from "../src/presence";
+import {
+  countHome,
+  formatStatusLine,
+  formatTime,
+  homeDetailText,
+  statusLabel,
+  summaryText,
+} from "../src/presence";
 import { MemberView } from "../src/api";
 
 function member(overrides: Partial<MemberView>): MemberView {
@@ -9,6 +16,7 @@ function member(overrides: Partial<MemberView>): MemberView {
     status: "home",
     statusUpdatedAt: "2026-01-01T05:32:00.000Z",
     nearbyLabel: "施設内",
+    homeDetail: "",
     isAdmin: false,
     ...overrides,
   };
@@ -46,6 +54,21 @@ describe("formatStatusLine", () => {
     const iso = new Date(2026, 0, 1, 12, 0).toISOString();
     const line = formatStatusLine(member({ status: "nearby", nearbyLabel: "ロビー", statusUpdatedAt: iso }));
     expect(line).toBe("ロビー · 12:00から");
+  });
+});
+
+describe("homeDetailText", () => {
+  it("在宅中に詳細が設定されていればそれを返す", () => {
+    expect(homeDetailText(member({ status: "home", homeDetail: "トイレ中" }))).toBe("トイレ中");
+  });
+
+  it("在宅中でも詳細が空ならnull", () => {
+    expect(homeDetailText(member({ status: "home", homeDetail: "" }))).toBeNull();
+  });
+
+  it("在宅中でなければ詳細が設定されていてもnull", () => {
+    expect(homeDetailText(member({ status: "away", homeDetail: "トイレ中" }))).toBeNull();
+    expect(homeDetailText(member({ status: "nearby", homeDetail: "トイレ中" }))).toBeNull();
   });
 });
 

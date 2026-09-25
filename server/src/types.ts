@@ -17,6 +17,8 @@ export interface Member {
   showName: boolean;
   status: PresenceStatus;
   statusUpdatedAt: string; // ISO8601
+  /** 在宅中の詳細な状態(例:「トイレ中」「入浴中」)。本人が自由に設定できる。状態が変わるたびに空に戻る。 */
+  homeDetail: string;
   homeLat: number | null;
   homeLng: number | null;
   homeRadiusM: number | null;
@@ -40,6 +42,8 @@ export interface MemberView {
   statusUpdatedAt: string;
   /** status が "nearby" の場合に表示すべきラベル(グループ共通・管理者が設定した呼び方)。 */
   nearbyLabel: string;
+  /** status が "home" の場合に、本人が任意で設定した詳細な状態(例:「トイレ中」)。 */
+  homeDetail: string;
   /** このメンバーが管理者かどうか(管理者は家族一覧で分かるようにする)。 */
   isAdmin: boolean;
 }

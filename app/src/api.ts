@@ -7,6 +7,8 @@ export interface MemberView {
   status: PresenceStatus;
   statusUpdatedAt: string;
   nearbyLabel: string;
+  /** status が "home" の場合に、本人が任意で設定した詳細な状態(例:「トイレ中」)。 */
+  homeDetail: string;
   isAdmin: boolean;
 }
 
@@ -116,6 +118,13 @@ export class ApiClient {
     return this.request(`/groups/${groupId}/nearby-label`, {
       method: "PATCH",
       body: { deviceId: this.deviceId, nearbyLabel },
+    });
+  }
+
+  updateHomeDetail(memberId: string, homeDetail: string): Promise<{ ok: true; homeDetail: string }> {
+    return this.request(`/members/${memberId}/home-detail`, {
+      method: "PATCH",
+      body: { deviceId: this.deviceId, homeDetail },
     });
   }
 

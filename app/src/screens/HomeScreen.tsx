@@ -6,20 +6,33 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { useApp } from "../state/AppContext";
-import { formatStatusLine, statusLabel, summaryText } from "../presence";
+import { formatStatusLine, homeDetailText, statusLabel, summaryText } from "../presence";
 import { MemberView, PresenceStatus } from "../api";
 import { colors, radius, spacing, typography } from "../theme/tokens";
+import { HOME_DETAIL_MAX_LENGTH } from "../validation";
 
 export default function HomeScreen() {
-  const { members, inviteCode, refreshMembers, setStatus, setMemberStatus, nearbyLabel, amIAdmin } = useApp();
+  const {
+    members,
+    inviteCode,
+    refreshMembers,
+    setStatus,
+    setMemberStatus,
+    nearbyLabel,
+    amIAdmin,
+    saveHomeDetail,
+  } = useApp();
   const [refreshing, setRefreshing] = useState(false);
   const [sending, setSending] = useState(false);
+  const [homeDetailDraft, setHomeDetailDraft] = useState("");
+  const [editingHomeDetail, setEditingHomeDetail] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -44,6 +57,24 @@ export default function HomeScreen() {
   };
 
   const myStatus = members.find((m) => m.isMe)?.status;
+  const myHomeDetail = members.find((m) => m.isMe)?.homeDetail ?? "";
+
+  useEffect(() => {
+    // 通信中に編集中の入力を上書きしないよう、編集していないときだけ同期する
+    if (!editingHomeDetail) setHomeDetailDraft(myHomeDetail);
+  }, [myHomeDetail, editingHomeDetail]);
+
+  const handleHomeDetailBlur = async () => {
+    setEditingHomeDetail(false);
+    const trimmed = homeDetailDraft.trim();
+    if (trimmed === myHomeDetail) return;
+    try {
+      await saveHomeDetail(trimmed);
+    } catch {
+      setHomeDetailDraft(myHomeDetail);
+      Alert.alert("エラー", "詳細な状態の変更に失敗しました");
+    }
+  };
 
   const handleAdminChangeStatus = (target: MemberView) => {
     Alert.alert(
@@ -105,6 +136,20 @@ export default function HomeScreen() {
         />
       </View>
       {sending && <ActivityIndicator style={styles.statusSwitchLoading} color={colors.accent} />}
+      {myStatus === "home" && (
+        <View style={styles.homeDetailRow}>
+          <TextInput
+            style={styles.homeDetailInput}
+            placeholder="トイレ中・入浴中 など（任意）"
+            placeholderTextColor={colors.textFaint}
+            value={homeDetailDraft}
+            onChangeText={setHomeDetailDraft}
+            onFocus={() => setEditingHomeDetail(true)}
+            onBlur={handleHomeDetailBlur}
+            maxLength={HOME_DETAIL_MAX_LENGTH}
+          />
+        </View>
+      )}
       {amIAdmin && (
         <Text style={styles.adminHint}>管理者として、家族の名前を長押しすると代わりに状態を変更できます</Text>
       )}
@@ -164,6 +209,7 @@ function MemberRow({ member, onLongPress }: { member: MemberView; onLongPress?: 
           )}
         </View>
         <Text style={styles.memberTime}>{formatStatusLine(member)}</Text>
+        {homeDetailText(member) && <Text style={styles.homeDetailCaption}>{homeDetailText(member)}</Text>}
       </View>
       <View style={[styles.statusPill, { backgroundColor: STATUS_SOFT_COLOR[member.status] }]}>
         <Text style={[styles.statusPillText, { color: STATUS_COLOR[member.status] }]}>
@@ -226,6 +272,18 @@ const styles = StyleSheet.create({
   },
   statusSwitchButtonText: { ...typography.labelLg, fontSize: 13 },
   statusSwitchLoading: { marginBottom: spacing.sm },
+  homeDetailRow: { marginHorizontal: spacing.lg, marginBottom: spacing.sm },
+  homeDetailInput: {
+    ...typography.bodyMd,
+    color: colors.textPrimary,
+    backgroundColor: colors.surface,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    textAlign: "center",
+  },
   adminHint: {
     ...typography.bodySm,
     color: colors.textFaint,
@@ -270,6 +328,7 @@ const styles = StyleSheet.create({
   },
   adminTagText: { ...typography.bodySm, color: colors.home, fontSize: 10 },
   memberTime: { ...typography.bodySm, color: colors.textFaint, marginTop: 2 },
+  homeDetailCaption: { ...typography.bodySm, color: colors.accent, marginTop: 2, fontWeight: "600" },
   statusPill: { borderRadius: radius.full, paddingHorizontal: spacing.sm, paddingVertical: 6 },
   statusPillText: { ...typography.labelLg, fontSize: 12 },
 });

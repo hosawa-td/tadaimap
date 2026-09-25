@@ -253,3 +253,72 @@ describe("PATCH /groups/:groupId/nearby-label", () => {
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
   });
 });
+
+describe("PATCH /members/:memberId/home-detail", () => {
+  it("在宅中の詳細な状態を設定でき、家族一覧にも反映される", async () => {
+    const { app, groupId, memberIdA } = await setupGroupWithTwoMembers();
+
+    const res = await request(app)
+      .patch(`/members/${memberIdA}/home-detail`)
+      .send({ deviceId: "dev-1", homeDetail: "トイレ中" });
+
+    expect(res.status).toBe(200);
+
+    const list = await request(app)
+      .get(`/groups/${groupId}/members`)
+      .set("x-device-id", "dev-1");
+    const memberA = list.body.members.find((m: any) => m.memberId === memberIdA);
+    expect(memberA.homeDetail).toBe("トイレ中");
+  });
+
+  it("空文字を送ると詳細な状態をクリアできる", async () => {
+    const { app, memberIdA } = await setupGroupWithTwoMembers();
+    await request(app)
+      .patch(`/members/${memberIdA}/home-detail`)
+      .send({ deviceId: "dev-1", homeDetail: "トイレ中" });
+
+    const res = await request(app)
+      .patch(`/members/${memberIdA}/home-detail`)
+      .send({ deviceId: "dev-1", homeDetail: "" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.homeDetail).toBe("");
+  });
+
+  it("13文字以上はVALIDATION_ERRORになる", async () => {
+    const { app, memberIdA } = await setupGroupWithTwoMembers();
+
+    const res = await request(app)
+      .patch(`/members/${memberIdA}/home-detail`)
+      .send({ deviceId: "dev-1", homeDetail: "あ".repeat(13) });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("他人のmemberIdを操作しようとするとFORBIDDENになる", async () => {
+    const { app, memberIdA } = await setupGroupWithTwoMembers();
+
+    const res = await request(app)
+      .patch(`/members/${memberIdA}/home-detail`)
+      .send({ deviceId: "dev-2", homeDetail: "トイレ中" });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe("FORBIDDEN");
+  });
+
+  it("状態(status)を変更すると、詳細な状態は自動的にクリアされる", async () => {
+    const { app, groupId, memberIdA } = await setupGroupWithTwoMembers();
+    await request(app)
+      .patch(`/members/${memberIdA}/home-detail`)
+      .send({ deviceId: "dev-1", homeDetail: "トイレ中" });
+
+    await request(app).patch(`/members/${memberIdA}/status`).send({ deviceId: "dev-1", status: "home" });
+
+    const list = await request(app)
+      .get(`/groups/${groupId}/members`)
+      .set("x-device-id", "dev-1");
+    const memberA = list.body.members.find((m: any) => m.memberId === memberIdA);
+    expect(memberA.homeDetail).toBe("");
+  });
+});

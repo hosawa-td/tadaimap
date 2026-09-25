@@ -43,6 +43,8 @@ const MEMBERS_COLUMNS = [
   "is_admin",
   // Web版のプッシュ通知(Web Push)対応で追加(既存の行との互換性のため末尾に追加)
   "web_push_subscription",
+  // 在宅中の詳細な状態(トイレ中など)機能で追加(既存の行との互換性のため末尾に追加)
+  "home_detail",
 ] as const;
 
 /**
@@ -178,6 +180,7 @@ export class SheetsRepository implements Repository {
       // row[14] (nearby_label_unused) は過去の名残の列。呼び方はGroups側で管理する。
       isAdmin: toBool(row[15]),
       webPushSubscription: row[16] || null,
+      homeDetail: row[17] || "",
     };
   }
 
@@ -200,6 +203,7 @@ export class SheetsRepository implements Repository {
       "",
       m.isAdmin,
       m.webPushSubscription ?? "",
+      m.homeDetail,
     ];
   }
 
@@ -250,6 +254,7 @@ export class SheetsRepository implements Repository {
       showName: true,
       status: "away",
       statusUpdatedAt: now.toISOString(),
+      homeDetail: "",
       homeLat: null,
       homeLng: null,
       homeRadiusM: null,
@@ -284,6 +289,7 @@ export class SheetsRepository implements Repository {
       showName: true,
       status: "away",
       statusUpdatedAt: now.toISOString(),
+      homeDetail: "",
       homeLat: null,
       homeLng: null,
       homeRadiusM: null,
@@ -349,6 +355,14 @@ export class SheetsRepository implements Repository {
     const { rowNumber, member } = await this.requireStatusPermissionRow(memberId, deviceId);
     member.status = status;
     member.statusUpdatedAt = new Date().toISOString();
+    member.homeDetail = "";
+    await this.updateRow(MEMBERS_SHEET, rowNumber, this.memberToRow(member));
+    return member;
+  }
+
+  async updateHomeDetail(memberId: string, deviceId: string, homeDetail: string) {
+    const { rowNumber, member } = await this.requireOwnedMemberRow(memberId, deviceId);
+    member.homeDetail = homeDetail.trim();
     await this.updateRow(MEMBERS_SHEET, rowNumber, this.memberToRow(member));
     return member;
   }

@@ -4,6 +4,7 @@ import {
   isValidRadius,
   isValidBuildingRadius,
   isValidNearbyLabel,
+  isValidHomeDetail,
 } from "../src/validation";
 
 describe("isValidName", () => {
@@ -62,5 +63,17 @@ describe("isValidNearbyLabel", () => {
   it("空文字や13文字以上は無効", () => {
     expect(isValidNearbyLabel("")).toBe(false);
     expect(isValidNearbyLabel("あ".repeat(13))).toBe(false);
+  });
+});
+
+describe("isValidHomeDetail", () => {
+  it("空文字(未設定に戻す)や12文字以内は有効", () => {
+    expect(isValidHomeDetail("")).toBe(true);
+    expect(isValidHomeDetail("トイレ中")).toBe(true);
+    expect(isValidHomeDetail("あ".repeat(12))).toBe(true);
+  });
+
+  it("13文字以上は無効", () => {
+    expect(isValidHomeDetail("あ".repeat(13))).toBe(false);
   });
 });

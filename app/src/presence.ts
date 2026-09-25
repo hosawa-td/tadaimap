@@ -20,6 +20,13 @@ export function formatStatusLine(member: MemberView): string {
   return `外出中 · ${time}に外出`;
 }
 
+/** 在宅中に本人が設定した詳細な状態(例:「トイレ中」)。無ければnull。 */
+export function homeDetailText(member: MemberView): string | null {
+  if (member.status !== "home" || !member.homeDetail) return null;
+  const trimmed = member.homeDetail.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export function countHome(members: MemberView[]): { home: number; total: number } {
   return {
     home: members.filter((m) => m.status === "home").length,

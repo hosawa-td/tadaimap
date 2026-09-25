@@ -34,6 +34,7 @@ export class MemoryRepository implements Repository {
       showName: true,
       status: "away",
       statusUpdatedAt: now.toISOString(),
+      homeDetail: "",
       homeLat: null,
       homeLng: null,
       homeRadiusM: null,
@@ -75,6 +76,7 @@ export class MemoryRepository implements Repository {
       showName: true,
       status: "away",
       statusUpdatedAt: now.toISOString(),
+      homeDetail: "",
       homeLat: null,
       homeLng: null,
       homeRadiusM: null,
@@ -131,6 +133,13 @@ export class MemoryRepository implements Repository {
     const member = await this.requireStatusPermission(memberId, deviceId);
     member.status = status;
     member.statusUpdatedAt = new Date().toISOString();
+    member.homeDetail = "";
+    return member;
+  }
+
+  async updateHomeDetail(memberId: string, deviceId: string, homeDetail: string): Promise<Member> {
+    const member = this.requireOwnedMember(memberId, deviceId);
+    member.homeDetail = homeDetail.trim();
     return member;
   }
 
