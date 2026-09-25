@@ -119,8 +119,19 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>わが家</Text>
-        <Text style={styles.headerSub}>招待コード: {inviteCode ?? "------"}</Text>
+        <View style={styles.headerRow}>
+          <View>
+            <Text style={styles.headerTitle}>わが家</Text>
+            <Text style={styles.headerSub}>招待コード: {inviteCode ?? "------"}</Text>
+          </View>
+          <TouchableOpacity style={styles.refreshButton} onPress={handleRefresh} disabled={refreshing}>
+            {refreshing ? (
+              <ActivityIndicator size="small" color={colors.accent} />
+            ) : (
+              <Text style={styles.refreshButtonText}>更新</Text>
+            )}
+          </TouchableOpacity>
+        </View>
         <Text style={styles.summary}>{summaryText(members)}</Text>
       </View>
 
@@ -179,9 +190,6 @@ export default function HomeScreen() {
             returnKeyType="done"
             maxLength={HOME_DETAIL_MAX_LENGTH}
           />
-          <TouchableOpacity style={styles.homeDetailSaveButton} onPress={handleHomeDetailSubmit}>
-            <Text style={styles.homeDetailSaveText}>更新</Text>
-          </TouchableOpacity>
         </View>
       )}
       {amIAdmin && (
@@ -288,8 +296,20 @@ function StatusSwitchButton({
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   header: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.sm },
+  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
   headerTitle: { ...typography.headlineSm, color: colors.textPrimary },
   headerSub: { ...typography.bodySm, color: colors.textFaint, marginTop: 2 },
+  refreshButton: {
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    minWidth: 56,
+    alignItems: "center",
+  },
+  refreshButtonText: { ...typography.labelLg, fontSize: 13, color: colors.textPrimary },
   summary: { ...typography.titleMd, color: colors.home, marginTop: spacing.xs },
   statusSwitchRow: {
     flexDirection: "row",
@@ -337,13 +357,6 @@ const styles = StyleSheet.create({
   },
   homeDetailClearText: { color: colors.textSecondary, fontSize: 16, fontWeight: "700" },
   homeDetailClearTextDisabled: { color: colors.textFaint },
-  homeDetailSaveButton: {
-    borderRadius: radius.full,
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 10,
-  },
-  homeDetailSaveText: { color: colors.onPrimary, ...typography.labelLg, fontSize: 13 },
   adminHint: {
     ...typography.bodySm,
     color: colors.textFaint,

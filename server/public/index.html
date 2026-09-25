@@ -44,6 +44,12 @@
   h1{font-size:22px;margin:8px 0 4px;}
   .lead{font-size:13.5px;color:var(--text-muted);line-height:1.7;margin:0 0 20px;}
   .badge{display:inline-flex;align-items:center;gap:6px;background:var(--surface-sand);color:var(--primary);font-size:12px;font-weight:700;padding:6px 12px;border-radius:100px;margin-bottom:16px;}
+  .home-header-row{display:flex;align-items:center;justify-content:space-between;}
+  .refresh-button{
+    flex:none;border:1.5px solid var(--border);border-radius:100px;background:var(--surface);
+    color:var(--text);font-size:13px;font-weight:700;padding:7px 14px;cursor:pointer;margin-bottom:16px;
+  }
+  .refresh-button:disabled{opacity:.5;cursor:not-allowed;}
   label{display:block;font-size:12.5px;font-weight:700;color:var(--text-muted);margin:16px 0 6px;letter-spacing:.02em;}
   input[type="text"]{
     width:100%;padding:13px 14px;border-radius:12px;border:1.5px solid var(--border);
@@ -76,10 +82,6 @@
     background:var(--surface);color:var(--text-muted);font-size:16px;font-weight:700;cursor:pointer;
   }
   .home-detail-clear:disabled{color:var(--text-faint);cursor:not-allowed;}
-  .home-detail-save{
-    flex:none;border:none;border-radius:100px;background:var(--primary);color:var(--on-primary);
-    font-size:13px;font-weight:700;padding:10px 14px;cursor:pointer;
-  }
   .status{flex:none;font-size:12px;font-weight:700;padding:6px 11px;border-radius:100px;}
   .status.home{background:var(--home-soft);color:var(--home);}
   .status.nearby{background:var(--nearby-soft);color:var(--nearby);}
@@ -132,7 +134,10 @@
   </section>
 
   <section id="home-view" hidden>
-    <span class="badge" id="home-badge">🏠 わが家</span>
+    <div class="home-header-row">
+      <span class="badge" id="home-badge">🏠 わが家</span>
+      <button type="button" id="refresh-button" class="refresh-button">更新</button>
+    </div>
     <h1 id="home-count">-</h1>
     <p class="lead" id="home-sub">招待コード ------</p>
 
@@ -146,7 +151,6 @@
     <div id="home-detail-row" class="home-detail-row" hidden>
       <button type="button" id="home-detail-clear" class="home-detail-clear" aria-label="クリア">×</button>
       <input type="text" id="home-detail-input" maxlength="12" placeholder="トイレ中・入浴中 など（任意）">
-      <button type="button" id="home-detail-save" class="home-detail-save">更新</button>
     </div>
 
     <div id="member-list" style="margin-top:18px;"></div>
@@ -518,14 +522,22 @@
   homeDetailInput.addEventListener("change", function () {
     commitHomeDetail(homeDetailInput.value);
   });
-  el("home-detail-save").addEventListener("click", function () {
-    // blur()でネイティブのchangeイベントが発火し、そこでcommitHomeDetailが呼ばれる
-    homeDetailInput.blur();
-  });
   el("home-detail-clear").addEventListener("click", function () {
     homeDetailInput.value = "";
     el("home-detail-clear").disabled = true;
     commitHomeDetail("");
+  });
+
+  el("refresh-button").addEventListener("click", async function () {
+    var btn = el("refresh-button");
+    btn.disabled = true;
+    btn.textContent = "更新中…";
+    try {
+      await loadHome();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "更新";
+    }
   });
 
   // ---------- Web Push通知 ----------
