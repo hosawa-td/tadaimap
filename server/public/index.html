@@ -172,7 +172,7 @@
     <p class="hint" id="notify-hint" style="text-align:center;" hidden></p>
 
     <button class="btn btn-danger" id="leave-btn">このブラウザをグループから外す</button>
-    <p class="footnote">この画面は自動更新されません。最新の状況を見るには再読み込みしてください。</p>
+    <p class="footnote">通知が有効な場合、通知を受け取ったときにこの画面も自動で更新されます。それ以外は自動更新されないため、最新の状況を見るには再読み込みしてください。</p>
   </section>
 
   <div class="toast" id="toast"></div>
@@ -473,6 +473,16 @@
   });
 
   // ---------- Web Push通知 ----------
+  if ("serviceWorker" in navigator) {
+    // 通知が届いた瞬間に、Service Workerからの合図でその場で一覧を最新化する
+    // (通知が届いてから、手動で再読み込みするまで待たせないため)
+    navigator.serviceWorker.addEventListener("message", function (event) {
+      if (event.data && event.data.type === "tadaimap-refresh") {
+        loadHome();
+      }
+    });
+  }
+
   function isIOS() {
     return /iP(hone|od|ad)/.test(navigator.userAgent);
   }

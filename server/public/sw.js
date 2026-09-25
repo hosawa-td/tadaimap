@@ -12,11 +12,19 @@ self.addEventListener("push", function (event) {
   var title = data.title || "タダイマップ";
   var body = data.body || "";
   event.waitUntil(
-    self.registration.showNotification(title, {
-      body: body,
-      icon: "/icon.png",
-      badge: "/icon.png",
-    })
+    Promise.all([
+      self.registration.showNotification(title, {
+        body: body,
+        icon: "/icon.png",
+        badge: "/icon.png",
+      }),
+      // 画面を開いたままの場合は、通知と同時にその場で一覧を最新化させる
+      self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (clientList) {
+        clientList.forEach(function (client) {
+          client.postMessage({ type: "tadaimap-refresh" });
+        });
+      }),
+    ])
   );
 });
 
