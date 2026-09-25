@@ -40,13 +40,20 @@ self.addEventListener("push", function (event) {
 
 self.addEventListener("notificationclick", function (event) {
   event.notification.close();
+  var scopeUrl = self.registration.scope; // 相対URLよりも、こちらの方がiPhoneで確実に開ける
   event.waitUntil(
-    clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (windowClients) {
-      for (var i = 0; i < windowClients.length; i++) {
-        var client = windowClients[i];
-        if ("focus" in client) return client.focus();
-      }
-      if (clients.openWindow) return clients.openWindow("/");
-    })
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then(function (windowClients) {
+        for (var i = 0; i < windowClients.length; i++) {
+          var client = windowClients[i];
+          if ("focus" in client) return client.focus();
+        }
+        return self.clients.openWindow(scopeUrl);
+      })
+      .catch(function () {
+        // focus/openWindowが失敗しても、通知自体は消せているので何もしない
+        return self.clients.openWindow(scopeUrl);
+      })
   );
 });
