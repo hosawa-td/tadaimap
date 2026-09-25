@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Keyboard,
   RefreshControl,
   StyleSheet,
   Text,
@@ -64,9 +65,8 @@ export default function HomeScreen() {
     if (!editingHomeDetail) setHomeDetailDraft(myHomeDetail);
   }, [myHomeDetail, editingHomeDetail]);
 
-  const handleHomeDetailBlur = async () => {
-    setEditingHomeDetail(false);
-    const trimmed = homeDetailDraft.trim();
+  const commitHomeDetail = async (value: string) => {
+    const trimmed = value.trim();
     if (trimmed === myHomeDetail) return;
     try {
       await saveHomeDetail(trimmed);
@@ -74,6 +74,21 @@ export default function HomeScreen() {
       setHomeDetailDraft(myHomeDetail);
       Alert.alert("エラー", "詳細な状態の変更に失敗しました");
     }
+  };
+
+  const handleHomeDetailBlur = () => {
+    setEditingHomeDetail(false);
+    commitHomeDetail(homeDetailDraft);
+  };
+
+  const handleHomeDetailSubmit = () => {
+    Keyboard.dismiss();
+    commitHomeDetail(homeDetailDraft);
+  };
+
+  const handleClearHomeDetail = () => {
+    setHomeDetailDraft("");
+    commitHomeDetail("");
   };
 
   const handleAdminChangeStatus = (target: MemberView) => {
@@ -138,6 +153,20 @@ export default function HomeScreen() {
       {sending && <ActivityIndicator style={styles.statusSwitchLoading} color={colors.accent} />}
       {myStatus === "home" && (
         <View style={styles.homeDetailRow}>
+          <TouchableOpacity
+            style={styles.homeDetailClearButton}
+            onPress={handleClearHomeDetail}
+            disabled={homeDetailDraft.length === 0}
+          >
+            <Text
+              style={[
+                styles.homeDetailClearText,
+                homeDetailDraft.length === 0 && styles.homeDetailClearTextDisabled,
+              ]}
+            >
+              ×
+            </Text>
+          </TouchableOpacity>
           <TextInput
             style={styles.homeDetailInput}
             placeholder="トイレ中・入浴中 など（任意）"
@@ -146,8 +175,13 @@ export default function HomeScreen() {
             onChangeText={setHomeDetailDraft}
             onFocus={() => setEditingHomeDetail(true)}
             onBlur={handleHomeDetailBlur}
+            onSubmitEditing={handleHomeDetailSubmit}
+            returnKeyType="done"
             maxLength={HOME_DETAIL_MAX_LENGTH}
           />
+          <TouchableOpacity style={styles.homeDetailSaveButton} onPress={handleHomeDetailSubmit}>
+            <Text style={styles.homeDetailSaveText}>更新</Text>
+          </TouchableOpacity>
         </View>
       )}
       {amIAdmin && (
@@ -272,8 +306,15 @@ const styles = StyleSheet.create({
   },
   statusSwitchButtonText: { ...typography.labelLg, fontSize: 13 },
   statusSwitchLoading: { marginBottom: spacing.sm },
-  homeDetailRow: { marginHorizontal: spacing.lg, marginBottom: spacing.sm },
+  homeDetailRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    gap: spacing.xs,
+  },
   homeDetailInput: {
+    flex: 1,
     ...typography.bodyMd,
     color: colors.textPrimary,
     backgroundColor: colors.surface,
@@ -284,6 +325,25 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     textAlign: "center",
   },
+  homeDetailClearButton: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  homeDetailClearText: { color: colors.textSecondary, fontSize: 16, fontWeight: "700" },
+  homeDetailClearTextDisabled: { color: colors.textFaint },
+  homeDetailSaveButton: {
+    borderRadius: radius.full,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+  },
+  homeDetailSaveText: { color: colors.onPrimary, ...typography.labelLg, fontSize: 13 },
   adminHint: {
     ...typography.bodySm,
     color: colors.textFaint,

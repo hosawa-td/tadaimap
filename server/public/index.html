@@ -69,6 +69,17 @@
   .admin-tag{font-size:10px;font-weight:700;color:var(--home);background:var(--home-soft);border-radius:6px;padding:1px 6px;}
   .time{font-size:12px;color:var(--text-faint);margin-top:2px;}
   .home-detail{font-size:12px;color:var(--accent);font-weight:700;margin-top:2px;}
+  .home-detail-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+  .home-detail-row input[type="text"]{flex:1;text-align:center;padding:10px 14px;}
+  .home-detail-clear{
+    flex:none;width:32px;height:32px;border-radius:100px;border:1.5px solid var(--border);
+    background:var(--surface);color:var(--text-muted);font-size:16px;font-weight:700;cursor:pointer;
+  }
+  .home-detail-clear:disabled{color:var(--text-faint);cursor:not-allowed;}
+  .home-detail-save{
+    flex:none;border:none;border-radius:100px;background:var(--primary);color:var(--on-primary);
+    font-size:13px;font-weight:700;padding:10px 14px;cursor:pointer;
+  }
   .status{flex:none;font-size:12px;font-weight:700;padding:6px 11px;border-radius:100px;}
   .status.home{background:var(--home-soft);color:var(--home);}
   .status.nearby{background:var(--nearby-soft);color:var(--nearby);}
@@ -132,7 +143,11 @@
     </div>
     <p class="hint" id="status-hint" style="text-align:center;">自動では切り替わりません。状態が変わったときに、その都度ボタンを押してください。</p>
 
-    <input type="text" id="home-detail-input" maxlength="12" placeholder="トイレ中・入浴中 など（任意）" hidden style="text-align:center;margin-bottom:6px;">
+    <div id="home-detail-row" class="home-detail-row" hidden>
+      <button type="button" id="home-detail-clear" class="home-detail-clear" aria-label="クリア">×</button>
+      <input type="text" id="home-detail-input" maxlength="12" placeholder="トイレ中・入浴中 など（任意）">
+      <button type="button" id="home-detail-save" class="home-detail-save">更新</button>
+    </div>
 
     <div id="member-list" style="margin-top:18px;"></div>
     <p class="hint" id="admin-hint" style="text-align:center;" hidden>管理者として、家族の名前をタップすると代わりに状態を変更できます</p>
@@ -374,9 +389,10 @@
         myHomeDetail = me.homeDetail || "";
       }
       renderMembers(result.members);
-      el("home-detail-input").hidden = myStatus !== "home";
+      el("home-detail-row").hidden = myStatus !== "home";
       if (myStatus === "home" && document.activeElement !== el("home-detail-input")) {
         el("home-detail-input").value = myHomeDetail;
+        el("home-detail-clear").disabled = myHomeDetail.length === 0;
       }
       el("admin-hint").hidden = !amIAdmin;
       el("settings-nearby-label").hidden = !amIAdmin;
@@ -483,18 +499,33 @@
   });
 
   var homeDetailInput = el("home-detail-input");
-  homeDetailInput.addEventListener("change", async function () {
+  async function commitHomeDetail(value) {
     var memberId = storageGet(STORAGE.memberId);
     if (!memberId) return;
-    var value = homeDetailInput.value.trim();
-    if (value === myHomeDetail) return;
+    var trimmed = value.trim();
+    if (trimmed === myHomeDetail) return;
     try {
-      await api("/members/" + memberId + "/home-detail", { method: "PATCH", body: { deviceId: deviceId, homeDetail: value } });
+      await api("/members/" + memberId + "/home-detail", { method: "PATCH", body: { deviceId: deviceId, homeDetail: trimmed } });
       loadHome();
     } catch (err) {
       homeDetailInput.value = myHomeDetail;
       showToast(err.message);
     }
+  }
+  homeDetailInput.addEventListener("input", function () {
+    el("home-detail-clear").disabled = homeDetailInput.value.length === 0;
+  });
+  homeDetailInput.addEventListener("change", function () {
+    commitHomeDetail(homeDetailInput.value);
+  });
+  el("home-detail-save").addEventListener("click", function () {
+    // blur()でネイティブのchangeイベントが発火し、そこでcommitHomeDetailが呼ばれる
+    homeDetailInput.blur();
+  });
+  el("home-detail-clear").addEventListener("click", function () {
+    homeDetailInput.value = "";
+    el("home-detail-clear").disabled = true;
+    commitHomeDetail("");
   });
 
   // ---------- Web Push通知 ----------
