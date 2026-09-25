@@ -26,7 +26,15 @@ export class VapidWebPushSender implements WebPushSender {
     if (messages.length === 0) return;
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const webpush = require("web-push");
-    webpush.setVapidDetails(this.subject, this.publicKey, this.privateKey);
+    try {
+      webpush.setVapidDetails(this.subject, this.publicKey, this.privateKey);
+    } catch (err) {
+      // 鍵の設定(VAPID_*環境変数)が不正な場合。ここで例外を投げると
+      // 本来無関係な状態更新リクエストまで失敗させてしまうため、ログのみに留める。
+      // eslint-disable-next-line no-console
+      console.error("[webpush] VAPID鍵の設定に失敗しました。環境変数を確認してください", err);
+      return;
+    }
     await Promise.all(
       messages.map(async (m) => {
         try {

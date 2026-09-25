@@ -173,14 +173,20 @@ export function createApp(
         );
       }
       const member = await repository.updateStatus(memberId, deviceId, status as PresenceStatus);
-      const group = await repository.getGroup(member.groupId);
-      await notifyGroupOfStatusChange(
-        repository,
-        pushSender,
-        webPushSender,
-        member,
-        group?.nearbyLabel ?? NEARBY_LABEL_DEFAULT
-      );
+      // 通知の送信に失敗しても、既に保存済みの状態更新自体は成功として返す
+      try {
+        const group = await repository.getGroup(member.groupId);
+        await notifyGroupOfStatusChange(
+          repository,
+          pushSender,
+          webPushSender,
+          member,
+          group?.nearbyLabel ?? NEARBY_LABEL_DEFAULT
+        );
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("[notify] 状態変更の通知送信に失敗しました", err);
+      }
       res.status(200).json({ ok: true });
     })
   );

@@ -2,14 +2,14 @@ import request from "supertest";
 import { createApp } from "../src/app";
 import { MemoryRepository } from "../src/repository.memory";
 import { FakePushSender } from "../src/push";
-import { FakeWebPushSender } from "../src/webpush";
+import { FakeWebPushSender, VapidWebPushSender, WebPushSender } from "../src/webpush";
 
 const VALID_SUBSCRIPTION = {
   endpoint: "https://example.com/push/abc123",
   keys: { p256dh: "p256dh-key", auth: "auth-key" },
 };
 
-async function setupGroupWithTwoMembers(webPush: FakeWebPushSender) {
+async function setupGroupWithTwoMembers(webPush: WebPushSender) {
   const repository = new MemoryRepository();
   const push = new FakePushSender();
   const app = createApp(repository, push, webPush);
@@ -143,5 +143,33 @@ describe("状態変更時のWeb Push通知", () => {
     await request(app).patch(`/members/${memberIdA}/status`).send({ deviceId: "dev-1", status: "home" });
 
     expect(webPush.sent).toHaveLength(0);
+  });
+
+  it("Web Push送信が失敗しても状態更新自体は成功する(VAPID鍵の設定ミスなどで通知全体が壊れないようにする)", async () => {
+    class ThrowingWebPushSender {
+      async send(): Promise<void> {
+        throw new Error("VAPID鍵が不正です");
+      }
+    }
+    const { app, memberIdA, memberIdB } = await setupGroupWithTwoMembers(new ThrowingWebPushSender());
+    await request(app)
+      .patch(`/members/${memberIdB}/web-push-subscription`)
+      .send({ deviceId: "dev-2", subscription: VALID_SUBSCRIPTION });
+
+    const res = await request(app)
+      .patch(`/members/${memberIdA}/status`)
+      .send({ deviceId: "dev-1", status: "home" });
+
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("VapidWebPushSender", () => {
+  it("VAPID鍵が不正でも例外を投げずに終わる(誤ってコピペした鍵で他の操作を巻き込んで失敗させないため)", async () => {
+    const sender = new VapidWebPushSender("不正な公開鍵", "不正な秘密鍵", "mailto:test@example.com");
+
+    await expect(
+      sender.send([{ subscription: VALID_SUBSCRIPTION, title: "タダイマップ", body: "テスト" }])
+    ).resolves.toBeUndefined();
   });
 });
