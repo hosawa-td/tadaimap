@@ -18,6 +18,7 @@ function member(overrides: Partial<MemberView>): MemberView {
     nearbyLabel: "施設内",
     homeDetail: "",
     isAdmin: false,
+    home: null,
     ...overrides,
   };
 }

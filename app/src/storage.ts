@@ -201,6 +201,29 @@ export async function loadHomeGeofenceConfig(): Promise<{
   return { lat, lng, homeRadiusM, buildingRadiusM };
 }
 
+function memberOrderKey(groupId: string): string {
+  return `tadaimap.memberOrder.${groupId}`;
+}
+
+/**
+ * ホーム画面の家族一覧の並び順(このグループでの、この端末だけの表示順)。
+ * 他のメンバーには影響しない、見た目だけの設定のため端末内にのみ保存する。
+ */
+export async function loadMemberOrder(groupId: string): Promise<string[] | null> {
+  const raw = await AsyncStorage.getItem(memberOrderKey(groupId));
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveMemberOrder(groupId: string, memberIdsInOrder: string[]): Promise<void> {
+  await AsyncStorage.setItem(memberOrderKey(groupId), JSON.stringify(memberIdsInOrder));
+}
+
 /** 参加中のグループが1つも残らなくなったときに、端末に残るすべてのローカル状態を消す。 */
 export async function clearAllMemberships(): Promise<void> {
   await AsyncStorage.multiRemove([

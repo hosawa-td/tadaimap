@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Keyboard,
   Modal,
   Pressable,
@@ -15,14 +14,42 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
+import DraggableFlatList, { RenderItemParams } from "react-native-draggable-flatlist";
+import { TouchableOpacity as GHTouchableOpacity } from "react-native-gesture-handler";
+import { Ionicons } from "@expo/vector-icons";
 import { useApp } from "../state/AppContext";
 import { formatStatusLine, homeDetailText, statusLabel, summaryText } from "../presence";
 import { MemberView, PresenceStatus } from "../api";
+import { loadMemberOrder, saveMemberOrder } from "../storage";
 import { colors, radius, spacing, typography } from "../theme/tokens";
 import { HOME_DETAIL_MAX_LENGTH } from "../validation";
 
+/**
+ * 端末に保存済みの並び順があればそれを適用し(新しく増えたメンバーは末尾に追加)、
+ * 保存が無い場合は自分を先頭にした既定の並びにする。
+ */
+function applyMemberOrder(members: MemberView[], order: string[] | null): MemberView[] {
+  if (!order) {
+    const me = members.find((m) => m.isMe);
+    const others = members.filter((m) => !m.isMe);
+    return me ? [me, ...others] : members;
+  }
+  const remaining = new Map(members.map((m) => [m.memberId, m]));
+  const ordered: MemberView[] = [];
+  order.forEach((id) => {
+    const m = remaining.get(id);
+    if (m) {
+      ordered.push(m);
+      remaining.delete(id);
+    }
+  });
+  remaining.forEach((m) => ordered.push(m));
+  return ordered;
+}
+
 export default function HomeScreen() {
   const {
+    groupId,
     members,
     inviteCode,
     refreshMembers,
@@ -38,6 +65,33 @@ export default function HomeScreen() {
   const [homeDetailDraft, setHomeDetailDraft] = useState("");
   const [editingHomeDetail, setEditingHomeDetail] = useState(false);
   const [adminTarget, setAdminTarget] = useState<MemberView | null>(null);
+  const [orderedMembers, setOrderedMembers] = useState<MemberView[]>([]);
+
+  useEffect(() => {
+    // メンバー一覧が更新されるたびに、この端末で保存している並び順を適用し直す
+    // (サーバー側の並びは常に一定ではないため)
+    let cancelled = false;
+    (async () => {
+      const order = groupId ? await loadMemberOrder(groupId) : null;
+      if (!cancelled) setOrderedMembers(applyMemberOrder(members, order));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [members, groupId]);
+
+  const handleDragEnd = useCallback(
+    ({ data }: { data: MemberView[] }) => {
+      setOrderedMembers(data);
+      if (groupId) {
+        saveMemberOrder(
+          groupId,
+          data.map((m) => m.memberId)
+        ).catch(() => {});
+      }
+    },
+    [groupId]
+  );
 
   const load = useCallback(async () => {
     try {
@@ -223,14 +277,17 @@ export default function HomeScreen() {
         <Text style={styles.adminHint}>管理者として、家族の名前を長押しすると代わりに状態を変更できます</Text>
       )}
 
-      <FlatList
-        data={members}
+      <DraggableFlatList
+        data={orderedMembers}
         keyExtractor={(m) => m.memberId}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
-        renderItem={({ item }) => (
+        onDragEnd={handleDragEnd}
+        renderItem={({ item, drag, isActive }: RenderItemParams<MemberView>) => (
           <MemberRow
             member={item}
+            isActive={isActive}
+            onDrag={drag}
             onLongPress={amIAdmin && !item.isMe ? () => handleAdminChangeStatus(item) : undefined}
           />
         )}
@@ -275,15 +332,34 @@ const STATUS_SOFT_COLOR: Record<PresenceStatus, string> = {
   away: colors.awaySoft,
 };
 
-function MemberRow({ member, onLongPress }: { member: MemberView; onLongPress?: () => void }) {
+function MemberRow({
+  member,
+  onLongPress,
+  onDrag,
+  isActive,
+}: {
+  member: MemberView;
+  onLongPress?: () => void;
+  onDrag: () => void;
+  isActive: boolean;
+}) {
   const Wrapper = onLongPress ? TouchableOpacity : View;
   return (
     <Wrapper
-      style={styles.memberCard}
+      style={[styles.memberCard, isActive && styles.memberCardActive]}
       onLongPress={onLongPress}
       delayLongPress={400}
       {...(onLongPress ? { activeOpacity: 0.7 } : {})}
     >
+      <GHTouchableOpacity
+        style={styles.dragHandle}
+        onLongPress={onDrag}
+        delayLongPress={150}
+        disabled={isActive}
+        hitSlop={8}
+      >
+        <Ionicons name="reorder-three" size={22} color={colors.textFaint} />
+      </GHTouchableOpacity>
       <View style={styles.avatar}>
         <Text style={styles.avatarText}>{member.nameOrAnonymous.slice(0, 1)}</Text>
       </View>
@@ -424,6 +500,17 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     padding: spacing.md,
     gap: spacing.sm,
+  },
+  memberCardActive: {
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
+  dragHandle: {
+    padding: spacing.xs,
+    marginLeft: -spacing.xs,
   },
   avatar: {
     width: 48,

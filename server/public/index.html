@@ -182,6 +182,18 @@
       </div>
     </div>
 
+    <div class="section-title">自宅の位置</div>
+    <div class="settings-card">
+      <div class="row">
+        <div>
+          <div class="row-title">自宅として登録された位置</div>
+          <div class="row-sub" id="home-location-sub">未登録です</div>
+        </div>
+      </div>
+      <button type="button" class="btn btn-outline" id="register-home-btn">現在地を自宅として登録する</button>
+      <p class="hint">登録すると、この画面を開いた瞬間に現在地から自動で在宅・施設内・外出中を判定します（バックグラウンドでの監視はできません）。判定範囲は在宅100m・施設内300mの初期値で登録されます。</p>
+    </div>
+
     <div class="section-title">通知</div>
     <div class="settings-card">
       <div class="row">
@@ -567,6 +579,8 @@
         updateStatusSwitch();
       }
       el("switch-notify").classList.toggle("on", storageGet(STORAGE.notifyEnabled) === "1");
+      el("home-location-sub").textContent = (me && me.home) ? "登録済みです" : "未登録です";
+      maybeAutoDetectStatus(me);
     } catch (err) {
       showToast(err.message);
     } finally {
@@ -628,15 +642,93 @@
     }
   });
 
-  async function sendStatus(memberId, status, successMessage) {
+  async function sendStatus(memberId, status, successMessage, source) {
     try {
-      await api("/members/" + memberId + "/status", { method: "PATCH", body: { deviceId: deviceId, status: status, source: "manual" } });
+      await api("/members/" + memberId + "/status", { method: "PATCH", body: { deviceId: deviceId, status: status, source: source || "manual" } });
       if (successMessage) showToast(successMessage);
       loadHome();
     } catch (err) {
       showToast(err.message);
     }
   }
+
+  // ---------- 自宅位置の登録・画面を開いた瞬間だけの簡易自動判定 ----------
+  var DEFAULT_HOME_RADIUS_M = 100;
+  var DEFAULT_BUILDING_RADIUS_M = 300;
+  // 「画面を開いた瞬間に1回だけ」判定するためのフラグ(このページを開いている間は再実行しない)
+  var autoDetectAttempted = false;
+
+  function distanceMeters(lat1, lng1, lat2, lng2) {
+    var R = 6371000;
+    var toRad = function (deg) { return (deg * Math.PI) / 180; };
+    var dLat = toRad(lat2 - lat1);
+    var dLng = toRad(lng2 - lng1);
+    var a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function getCurrentPositionAsync() {
+    return new Promise(function (resolve, reject) {
+      if (!navigator.geolocation) {
+        reject(new Error("この端末は位置情報の取得に対応していません。"));
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 8000, maximumAge: 60000 });
+    });
+  }
+
+  async function maybeAutoDetectStatus(me) {
+    if (autoDetectAttempted) return;
+    autoDetectAttempted = true;
+    if (!me || !me.home) return;
+    try {
+      var position = await getCurrentPositionAsync();
+      var distance = distanceMeters(
+        position.coords.latitude,
+        position.coords.longitude,
+        me.home.lat,
+        me.home.lng
+      );
+      var detected = distance <= me.home.homeRadiusM ? "home" : distance <= me.home.buildingRadiusM ? "nearby" : "away";
+      if (detected !== me.status) {
+        var label = detected === "nearby" ? myNearbyLabel : STATUS_LABEL[detected];
+        await sendStatus(me.memberId, detected, "現在地から「" + label + "」を自動検出しました", "auto");
+      }
+    } catch (e) {
+      // 位置情報が使えない・許可されなかった場合は、これまで通り手動切替にフォールバックする
+    }
+  }
+
+  el("register-home-btn").addEventListener("click", async function () {
+    var memberId = storageGet(STORAGE.memberId);
+    if (!memberId) return;
+    var btn = el("register-home-btn");
+    var originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "取得中…";
+    try {
+      var position = await getCurrentPositionAsync();
+      await api("/members/" + memberId + "/home", {
+        method: "PATCH",
+        body: {
+          deviceId: deviceId,
+          homeLat: position.coords.latitude,
+          homeLng: position.coords.longitude,
+          homeRadiusM: DEFAULT_HOME_RADIUS_M,
+          buildingRadiusM: DEFAULT_BUILDING_RADIUS_M,
+        },
+      });
+      showToast("現在地を自宅として登録しました");
+      loadHome();
+    } catch (err) {
+      showToast(err.message || "自宅の登録に失敗しました。位置情報の利用を許可してください。");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  });
 
   Array.prototype.forEach.call(el("status-switch").querySelectorAll("button"), function (btn) {
     btn.addEventListener("click", function () {

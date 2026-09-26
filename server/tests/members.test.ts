@@ -51,6 +51,30 @@ describe("GET /groups/:groupId/members", () => {
     expect(other.nameOrAnonymous).toBe("メンバー");
   });
 
+  it("自宅位置は本人の行にのみ含まれる(他メンバーには見せない)", async () => {
+    const { app, groupId, memberIdA } = await setupGroupWithTwoMembers();
+
+    await request(app)
+      .patch(`/members/${memberIdA}/home`)
+      .send({ deviceId: "dev-1", homeLat: 35.68, homeLng: 139.76, homeRadiusM: 100, buildingRadiusM: 300 });
+
+    const asOwner = await request(app).get(`/groups/${groupId}/members`).set("x-device-id", "dev-1");
+    const me = asOwner.body.members.find((m: any) => m.memberId === memberIdA);
+    expect(me.home).toEqual({ lat: 35.68, lng: 139.76, homeRadiusM: 100, buildingRadiusM: 300 });
+
+    const asOther = await request(app).get(`/groups/${groupId}/members`).set("x-device-id", "dev-2");
+    const notMe = asOther.body.members.find((m: any) => m.memberId === memberIdA);
+    expect(notMe.home).toBeNull();
+  });
+
+  it("自宅位置が未登録の場合はhomeがnullになる", async () => {
+    const { app, groupId, memberIdA } = await setupGroupWithTwoMembers();
+
+    const res = await request(app).get(`/groups/${groupId}/members`).set("x-device-id", "dev-1");
+    const me = res.body.members.find((m: any) => m.memberId === memberIdA);
+    expect(me.home).toBeNull();
+  });
+
   it("グループを作成した人だけがisAdmin=trueになる", async () => {
     const { app, groupId, memberIdA, memberIdB } = await setupGroupWithTwoMembers();
 

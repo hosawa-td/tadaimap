@@ -39,6 +39,11 @@ function toMemberView(
 ): MemberView {
   const isMe = member.deviceId === requesterDeviceId;
   const nameOrAnonymous = isMe || member.showName ? member.name : "メンバー";
+  const hasHome =
+    member.homeLat !== null &&
+    member.homeLng !== null &&
+    member.homeRadiusM !== null &&
+    member.buildingRadiusM !== null;
   return {
     memberId: member.memberId,
     nameOrAnonymous,
@@ -48,6 +53,15 @@ function toMemberView(
     nearbyLabel: groupNearbyLabel,
     homeDetail: member.homeDetail,
     isAdmin: isEffectiveAdmin(member, groupMembers),
+    home:
+      isMe && hasHome
+        ? {
+            lat: member.homeLat as number,
+            lng: member.homeLng as number,
+            homeRadiusM: member.homeRadiusM as number,
+            buildingRadiusM: member.buildingRadiusM as number,
+          }
+        : null,
   };
 }
 

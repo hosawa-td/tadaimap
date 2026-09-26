@@ -10,6 +10,8 @@ export interface MemberView {
   /** status が "home" の場合に、本人が任意で設定した詳細な状態(例:「トイレ中」)。 */
   homeDetail: string;
   isAdmin: boolean;
+  /** 自宅位置・判定範囲(登録済みの場合のみ)。他メンバーには見せないため、isMeの行にしか入らない。 */
+  home: { lat: number; lng: number; homeRadiusM: number; buildingRadiusM: number } | null;
 }
 
 export interface ApiErrorBody {

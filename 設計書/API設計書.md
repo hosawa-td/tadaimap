@@ -26,15 +26,15 @@ APIサーバーが提供するエンドポイント一覧。すべてスプレ�
 ### 3. `GET /groups/:groupId/members` — メンバー一覧取得（F5）
 
 - リクエスト：ヘッダーに`device_id`
-- レスポンス：`{ "inviteCode": string, "nearbyLabel": string, "members": [{ "memberId", "nameOrAnonymous", "isMe", "status": "home"|"nearby"|"away", "statusUpdatedAt", "nearbyLabel", "homeDetail", "isAdmin" }] }`
-- 処理：`Members`から該当`group_id`の行を取得。`show_name=FALSE`のメンバーは`name_or_anonymous`を`"メンバー"`とする（本人の行のみ常に本名）。各メンバーの`nearbyLabel`は個人設定ではなく、トップレベルの`nearbyLabel`（グループ共通、F13）と同じ値を複製して返す。`isAdmin`はグループ作成者かどうか（既存データとの互換性のため、`is_admin`列が無い古いグループでは作成日時が最も古いメンバーを管理者とみなす）。
+- レスポンス：`{ "inviteCode": string, "nearbyLabel": string, "members": [{ "memberId", "nameOrAnonymous", "isMe", "status": "home"|"nearby"|"away", "statusUpdatedAt", "nearbyLabel", "homeDetail", "isAdmin", "home": { "lat", "lng", "homeRadiusM", "buildingRadiusM" } | null }] }`
+- 処理：`Members`から該当`group_id`の行を取得。`show_name=FALSE`のメンバーは`name_or_anonymous`を`"メンバー"`とする（本人の行のみ常に本名）。各メンバーの`nearbyLabel`は個人設定ではなく、トップレベルの`nearbyLabel`（グループ共通、F13）と同じ値を複製して返す。`isAdmin`はグループ作成者かどうか（既存データとの互換性のため、`is_admin`列が無い古いグループでは作成日時が最も古いメンバーを管理者とみなす）。`home`は自宅位置・判定範囲が登録済みの場合のみ値を持ち、**他メンバーの位置情報を見せないため`isMe`の行にしか入らない**（Web版の画面を開いた瞬間の簡易自動判定、F22で使用）。
 
-### 4. `PATCH /members/:memberId/home` — 自宅位置・判定範囲の登録/変更（F3・F8）
+### 4. `PATCH /members/:memberId/home` — 自宅位置・判定範囲の登録/変更（F3・F8・F22）
 
 - リクエスト：`{ "device_id": string, "homeLat": number, "homeLng": number, "homeRadiusM": number, "buildingRadiusM": number }`
 - レスポンス：`{ "ok": true }`
 - エラー：`buildingRadiusM`が100〜2000mの範囲外、または`homeRadiusM`未満の場合は`400 VALIDATION_ERROR`
-- 処理：該当`Members`行の`home_lat`/`home_lng`/`home_radius_m`/`building_radius_m`を更新。
+- 処理：該当`Members`行の`home_lat`/`home_lng`/`home_radius_m`/`building_radius_m`を更新。Web版（F22）も、地図やスライダーを持たない簡易UIから同じエンドポイントを呼び出す（判定範囲は初期値の100m・300mで固定）。
 
 ### 5. `PATCH /members/:memberId/status` — ステータスの更新（F4・F6・F12）
 

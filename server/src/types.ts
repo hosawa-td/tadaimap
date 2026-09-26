@@ -46,4 +46,9 @@ export interface MemberView {
   homeDetail: string;
   /** このメンバーが管理者かどうか(管理者は家族一覧で分かるようにする)。 */
   isAdmin: boolean;
+  /**
+   * 自宅位置・判定範囲(登録済みの場合のみ)。他メンバーの位置情報を見せないよう、
+   * isMeがtrueの行にだけ含める(Web版が、画面を開いた瞬間の自動判定に使う)。
+   */
+  home: { lat: number; lng: number; homeRadiusM: number; buildingRadiusM: number } | null;
 }
