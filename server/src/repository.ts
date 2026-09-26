@@ -15,10 +15,11 @@ export interface Repository {
 
   getMemberById(memberId: string): Promise<Member | null>;
 
-  getMemberByDeviceId(deviceId: string): Promise<Member | null>;
-
   /** 指定したグループの中で、この端末が持っているメンバー行を返す(1台の端末が複数グループに参加できるため)。 */
   getMemberByGroupAndDevice(groupId: string, deviceId: string): Promise<Member | null>;
+
+  /** この端末が参加しているすべてのグループのメンバー行を、DB(スプレッドシート)から取得する。 */
+  getMembersByDeviceId(deviceId: string): Promise<Member[]>;
 
   updateHome(
     memberId: string,

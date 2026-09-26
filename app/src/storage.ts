@@ -21,6 +21,8 @@ export interface Membership {
   groupId: string;
   memberId: string;
   myName: string;
+  /** 一覧上でグループを見分けやすくするための表示用情報(DBから取得できた場合のみ)。 */
+  inviteCode?: string | null;
 }
 
 async function readMembershipsRaw(): Promise<Membership[]> {
@@ -124,6 +126,28 @@ export async function setCurrentGroupId(groupId: string): Promise<void> {
   const { memberships } = await loadMemberships();
   await AsyncStorage.setItem(STORAGE_KEYS.currentGroupId, groupId);
   await syncActiveMemberPointer(memberships.find((m) => m.groupId === groupId) ?? null);
+}
+
+/**
+ * 端末内の保存内容(参加中グループ一覧)を、サーバー(DB)から取得した最新の内容で置き換える。
+ * 端末の保存領域が失われた場合や、複数端末での操作で内容がずれた場合でも、
+ * 実際にDB上でこの端末が参加しているグループへ復元・同期できるようにするため。
+ */
+export async function replaceMemberships(
+  serverMemberships: Membership[]
+): Promise<{ memberships: Membership[]; currentGroupId: string | null }> {
+  const { currentGroupId: previousCurrent } = await loadMemberships();
+  await writeMemberships(serverMemberships);
+  const currentGroupId = serverMemberships.some((m) => m.groupId === previousCurrent)
+    ? previousCurrent
+    : serverMemberships[0]?.groupId ?? null;
+  if (currentGroupId) {
+    await AsyncStorage.setItem(STORAGE_KEYS.currentGroupId, currentGroupId);
+  } else {
+    await AsyncStorage.removeItem(STORAGE_KEYS.currentGroupId);
+  }
+  await syncActiveMemberPointer(serverMemberships.find((m) => m.groupId === currentGroupId) ?? null);
+  return { memberships: serverMemberships, currentGroupId };
 }
 
 export async function updateMembershipName(groupId: string, myName: string): Promise<void> {

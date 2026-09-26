@@ -367,6 +367,33 @@
     return { memberships: next, currentGroupId: nextCurrent };
   }
 
+  /**
+   * 参加中グループの一覧を、端末内の保存内容に頼らずDBから取り直し、端末内の保存内容を置き換える。
+   * 端末の保存領域が失われた場合や、他の端末での退出・削除で内容がずれた場合でも、
+   * 実際にDB上で参加しているグループへ復元・同期できるようにするため。
+   */
+  async function syncMembershipsWithServer() {
+    try {
+      var result = await api("/memberships");
+      var serverList = result.memberships.map(function (m) {
+        return { groupId: m.groupId, memberId: m.memberId, myName: m.myName, inviteCode: m.inviteCode };
+      });
+      var previousCurrent = loadMemberships().currentGroupId;
+      saveMemberships(serverList);
+      var stillValid = serverList.some(function (m) { return m.groupId === previousCurrent; });
+      var nextCurrent = stillValid ? previousCurrent : (serverList[0] ? serverList[0].groupId : null);
+      if (nextCurrent) {
+        setCurrentGroupId(nextCurrent);
+      } else {
+        storageRemove(STORAGE.currentGroupId);
+        syncActiveMemberPointer(null);
+        backupToCookie();
+      }
+    } catch (e) {
+      // オフライン等で同期できなくても、端末内の保存内容でそのまま使い続けられるようにする
+    }
+  }
+
   var deviceId = getOrCreateDeviceId();
   backupToCookie();
   var API_BASE = window.location.origin;
@@ -431,7 +458,7 @@
         method: "POST",
         body: { deviceId: deviceId, inviteCode: joinCode.value, name: name },
       });
-      addMembership({ groupId: result.groupId, memberId: result.memberId, myName: name });
+      addMembership({ groupId: result.groupId, memberId: result.memberId, myName: name, inviteCode: joinCode.value });
       showHomeView();
     } catch (err) {
       var messages = {
@@ -502,6 +529,7 @@
   }
 
   async function loadHome() {
+    await syncMembershipsWithServer();
     var groupId = storageGet(STORAGE.groupId);
     if (!groupId) return;
     try {
@@ -565,9 +593,10 @@
       if (i > 0) row.style.paddingTop = "12px";
       if (i > 0) row.style.borderTop = "1px solid var(--border)";
       var isCurrent = m.groupId === state.currentGroupId;
+      var subText = isCurrent ? "いま表示しているグループ" : "招待コード " + (m.inviteCode || "------");
       row.innerHTML =
         '<div><div class="row-title">' + (m.myName || "自分") + "として参加中</div>" +
-        (isCurrent ? '<div class="row-sub">いま表示しているグループ</div>' : "") + "</div>" +
+        '<div class="row-sub">' + subText + "</div></div>" +
         (isCurrent ? "" : '<button type="button" class="smallish-btn" style="border:1.5px solid var(--border);background:var(--surface);border-radius:100px;padding:7px 14px;font-size:13px;font-weight:700;color:var(--text);cursor:pointer;">切り替え</button>');
       if (!isCurrent) {
         row.querySelector("button").addEventListener("click", function () {
@@ -924,11 +953,19 @@
   }
 
   // ---------- Boot ----------
-  if (storageGet(STORAGE.groupId) && storageGet(STORAGE.memberId)) {
-    showHomeView();
-  } else {
-    showJoinView();
-  }
+  (async function boot() {
+    if (!(storageGet(STORAGE.groupId) && storageGet(STORAGE.memberId))) {
+      // 端末上は参加中グループが無いように見えても、保存領域が失われているだけの
+      // 可能性があるため、先にDBを確認してから画面を決める(showHomeView経由のloadHomeでも
+      // 同期するので、既に有効なグループがある場合はここでの二重の通信を避ける)
+      await syncMembershipsWithServer();
+    }
+    if (storageGet(STORAGE.groupId) && storageGet(STORAGE.memberId)) {
+      showHomeView();
+    } else {
+      showJoinView();
+    }
+  })();
 })();
 </script>
 </body>

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   Alert,
   ScrollView,
@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Clipboard from "expo-clipboard";
-import { useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../../App";
 import { useApp } from "../state/AppContext";
@@ -36,6 +36,7 @@ export default function SettingsScreen() {
     setNotifyEnabled,
     refreshInviteCode,
     switchGroup,
+    refreshMyGroups,
     leaveGroup,
     deleteGroup,
   } = useApp();
@@ -43,6 +44,14 @@ export default function SettingsScreen() {
   const [nameDraft, setNameDraft] = useState(myName);
   const [nearbyLabelDraft, setNearbyLabelDraft] = useState(nearbyLabel);
   const [copied, setCopied] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      // 端末の保存内容に頼らず、この画面を開くたびに参加中グループの一覧をDBと同期する
+      // (端末の保存領域が失われた場合や、他の端末で退出・削除された場合を反映するため)
+      refreshMyGroups().catch(() => {});
+    }, [refreshMyGroups])
+  );
 
   const handleNearbyLabelBlur = async () => {
     const trimmed = nearbyLabelDraft.trim();
@@ -267,7 +276,10 @@ export default function SettingsScreen() {
                   >
                     <View style={styles.rowTextBlock}>
                       <Text style={styles.rowTitle}>{m.myName}として参加中</Text>
-                      {m.groupId === groupId && <Text style={styles.rowSub}>いま表示しているグループ</Text>}
+                      <Text style={styles.rowSub}>
+                        {m.groupId === groupId ? "いま表示しているグループ" : "招待コード "}
+                        {m.groupId !== groupId && (m.inviteCode ?? "------")}
+                      </Text>
                     </View>
                     {m.groupId !== groupId && <Text style={styles.chevron}>›</Text>}
                   </TouchableOpacity>

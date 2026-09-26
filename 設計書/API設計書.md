@@ -106,6 +106,12 @@ APIサーバーが提供するエンドポイント一覧。すべてスプレ�
 - 権限：グループの管理者のみ（それ以外は`403 FORBIDDEN`）
 - 処理：該当グループに属する`Members`行をすべて削除したうえで、`Groups`の該当行も削除する。
 
+### 16. `GET /memberships` — この端末が参加しているグループの一覧取得（F18）
+
+- リクエスト：ヘッダーに`device_id`
+- レスポンス：`{ "memberships": [{ "groupId": string, "memberId": string, "myName": string, "inviteCode": string | null }] }`
+- 処理：`Members`シートを`device_id`で検索し、該当する全行（複数グループに参加している場合は複数件）について、それぞれの`group_id`から招待コードを引いて返す。端末内の保存内容（キャッシュ）をこの結果で置き換えるために使う（端末の保存領域が失われた場合の復元用。詳細はF18を参照）。
+
 ## Web版の配信について
 
 上記に加え、APIサーバーは`express.static`により`server/public/`配下（`index.html`・`sw.js`・`manifest.json`・アイコン画像）を静的配信する。これらはJSON APIではなく、Web版（F14）のブラウザ画面・Service Worker本体・PWAメタデータである。

@@ -66,6 +66,19 @@ describe("ApiClient", () => {
     );
   });
 
+  it("getMyMembershipsはGETリクエストを送る", async () => {
+    mockFetchOnce(200, { memberships: [{ groupId: "g1", memberId: "m1", myName: "さくら", inviteCode: "123456" }] });
+    const client = new ApiClient("http://api.example.com", "dev-1");
+
+    const result = await client.getMyMemberships();
+
+    expect(result.memberships).toHaveLength(1);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://api.example.com/memberships",
+      expect.objectContaining({ method: "GET" })
+    );
+  });
+
   it("deleteGroupはDELETEリクエストを送る", async () => {
     mockFetchOnce(200, { ok: true });
     const client = new ApiClient("http://api.example.com", "dev-1");

@@ -118,3 +118,33 @@ describe("POST /groups/join", () => {
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
   });
 });
+
+describe("GET /memberships", () => {
+  it("この端末が参加しているすべてのグループを、招待コード付きでDBから返す", async () => {
+    const { app } = buildApp();
+    const groupA = await request(app).post("/groups").send({ deviceId: "dev-1", name: "さくら" });
+    const groupB = await request(app).post("/groups").send({ deviceId: "dev-2", name: "たかし" });
+    await request(app)
+      .post("/groups/join")
+      .send({ deviceId: "dev-1", inviteCode: groupB.body.inviteCode, name: "さくら" });
+
+    const res = await request(app).get("/memberships").set("x-device-id", "dev-1");
+
+    expect(res.status).toBe(200);
+    expect(res.body.memberships).toHaveLength(2);
+    expect(res.body.memberships).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ groupId: groupA.body.groupId, inviteCode: groupA.body.inviteCode }),
+        expect.objectContaining({ groupId: groupB.body.groupId, inviteCode: groupB.body.inviteCode }),
+      ])
+    );
+  });
+
+  it("参加しているグループが無い端末には空配列を返す", async () => {
+    const { app } = buildApp();
+    const res = await request(app).get("/memberships").set("x-device-id", "dev-999");
+
+    expect(res.status).toBe(200);
+    expect(res.body.memberships).toEqual([]);
+  });
+});

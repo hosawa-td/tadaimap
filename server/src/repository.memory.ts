@@ -104,18 +104,16 @@ export class MemoryRepository implements Repository {
     return this.members.get(memberId) ?? null;
   }
 
-  async getMemberByDeviceId(deviceId: string): Promise<Member | null> {
-    return (
-      [...this.members.values()].find((m) => m.deviceId === deviceId) ?? null
-    );
-  }
-
   async getMemberByGroupAndDevice(groupId: string, deviceId: string): Promise<Member | null> {
     return (
       [...this.members.values()].find(
         (m) => m.groupId === groupId && m.deviceId === deviceId
       ) ?? null
     );
+  }
+
+  async getMembersByDeviceId(deviceId: string): Promise<Member[]> {
+    return [...this.members.values()].filter((m) => m.deviceId === deviceId);
   }
 
   async updateHome(

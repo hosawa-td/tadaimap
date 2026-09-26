@@ -131,6 +131,31 @@ export function createApp(
     })
   );
 
+  // F18: この端末が参加しているグループの一覧を、端末内の保存内容に頼らずDBから取得する
+  // (端末の保存領域が失われた場合でも、グループの切り替え・復元ができるようにするため)
+  app.get(
+    "/memberships",
+    asyncHandler(async (req, res) => {
+      const deviceId = getDeviceId(req);
+      if (!isValidDeviceId(deviceId)) {
+        throw new AppError("VALIDATION_ERROR", "device_idは必須です");
+      }
+      const members = await repository.getMembersByDeviceId(deviceId);
+      const memberships = await Promise.all(
+        members.map(async (m) => {
+          const group = await repository.getGroup(m.groupId);
+          return {
+            groupId: m.groupId,
+            memberId: m.memberId,
+            myName: m.name,
+            inviteCode: group?.inviteCode ?? null,
+          };
+        })
+      );
+      res.status(200).json({ memberships });
+    })
+  );
+
   // F3/F8: 自宅位置・判定範囲の登録/変更
   app.patch(
     "/members/:memberId/home",

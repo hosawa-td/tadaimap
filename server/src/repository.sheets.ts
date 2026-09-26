@@ -328,16 +328,15 @@ export class SheetsRepository implements Repository {
     return found?.member ?? null;
   }
 
-  async getMemberByDeviceId(deviceId: string): Promise<Member | null> {
-    const rows = await this.readSheet(MEMBERS_SHEET);
-    const row = rows.slice(1).find((r) => r[2] === deviceId);
-    return row ? this.rowToMember(row) : null;
-  }
-
   async getMemberByGroupAndDevice(groupId: string, deviceId: string): Promise<Member | null> {
     const rows = await this.readSheet(MEMBERS_SHEET);
     const row = rows.slice(1).find((r) => r[1] === groupId && r[2] === deviceId);
     return row ? this.rowToMember(row) : null;
+  }
+
+  async getMembersByDeviceId(deviceId: string): Promise<Member[]> {
+    const rows = await this.readSheet(MEMBERS_SHEET);
+    return rows.slice(1).filter((r) => r[2] === deviceId).map((r) => this.rowToMember(r));
   }
 
   private async requireOwnedMemberRow(memberId: string, deviceId: string) {

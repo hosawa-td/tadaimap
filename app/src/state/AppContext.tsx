@@ -16,6 +16,7 @@ import {
   loadMemberships,
   Membership,
   removeMembership,
+  replaceMemberships,
   saveHomeGeofenceConfig,
   setCurrentGroupId,
   STORAGE_KEYS,
@@ -51,6 +52,8 @@ interface AppContextValue {
   joinGroup: (inviteCode: string, name: string) => Promise<void>;
   /** 参加中の別のグループに切り替える。 */
   switchGroup: (groupId: string) => Promise<void>;
+  /** 参加中グループの一覧を、端末内の保存内容に頼らずDBから取り直す。 */
+  refreshMyGroups: () => Promise<void>;
   refreshMembers: (targetGroupId?: string) => Promise<void>;
   saveHome: (lat: number, lng: number, homeRadiusM: number, buildingRadiusM: number) => Promise<void>;
   setStatus: (status: PresenceStatus, source: "auto" | "manual") => Promise<void>;
@@ -88,6 +91,42 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const api = useMemo(() => (deviceId ? new ApiClient(API_BASE_URL, deviceId) : null), [deviceId]);
 
+  /**
+   * 参加中グループの一覧を、端末内の保存内容に頼らずDBから取り直し、端末内の保存内容を置き換える。
+   * 端末の保存領域が失われた場合(再インストール等)でも、実際にDB上で参加しているグループへ復元できる。
+   */
+  const syncMembershipsWithServer = useCallback(
+    async (apiOverride?: ApiClient) => {
+      const client = apiOverride ?? api;
+      if (!client) return;
+      const result = await client.getMyMemberships();
+      const synced = await replaceMemberships(
+        result.memberships.map((m) => ({
+          groupId: m.groupId,
+          memberId: m.memberId,
+          myName: m.myName,
+          inviteCode: m.inviteCode,
+        }))
+      );
+      setMemberships(synced.memberships);
+      const current = synced.memberships.find((m) => m.groupId === synced.currentGroupId);
+      if (current) {
+        setGroupId(current.groupId);
+        setMemberId(current.memberId);
+        setMyName(current.myName);
+      } else {
+        setGroupId(null);
+        setMemberId(null);
+        setMyName("");
+      }
+    },
+    [api]
+  );
+
+  const refreshMyGroups = useCallback(async () => {
+    await syncMembershipsWithServer();
+  }, [syncMembershipsWithServer]);
+
   useEffect(() => {
     (async () => {
       const id = await getOrCreateDeviceId();
@@ -105,8 +144,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setHomeRadiusM(geofenceConfig.homeRadiusM);
         setBuildingRadiusM(geofenceConfig.buildingRadiusM);
       }
+      try {
+        await syncMembershipsWithServer(new ApiClient(API_BASE_URL, id));
+      } catch {
+        // 起動時の同期に失敗しても(オフライン等)、端末内の保存内容でそのまま使い続けられるようにする
+      }
       setReady(true);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const withLoading = useCallback(async <T,>(fn: () => Promise<T>): Promise<T> => {
@@ -148,7 +193,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!api) throw new Error("初期化中です");
       return withLoading(async () => {
         const result = await api.createGroup(name);
-        const membership: Membership = { groupId: result.groupId, memberId: result.memberId, myName: name };
+        const membership: Membership = {
+          groupId: result.groupId,
+          memberId: result.memberId,
+          myName: name,
+          inviteCode: result.inviteCode,
+        };
         setGroupId(result.groupId);
         setMemberId(result.memberId);
         setMyName(name);
@@ -166,7 +216,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!api) throw new Error("初期化中です");
       await withLoading(async () => {
         const result = await api.joinGroup(inviteCode2, name);
-        const membership: Membership = { groupId: result.groupId, memberId: result.memberId, myName: name };
+        const membership: Membership = {
+          groupId: result.groupId,
+          memberId: result.memberId,
+          myName: name,
+          inviteCode: inviteCode2,
+        };
         setGroupId(result.groupId);
         setMemberId(result.memberId);
         setMyName(name);
@@ -409,6 +464,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     createGroup,
     joinGroup,
     switchGroup,
+    refreshMyGroups,
     refreshMembers,
     saveHome,
     setStatus,

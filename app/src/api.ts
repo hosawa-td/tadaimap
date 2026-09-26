@@ -162,4 +162,11 @@ export class ApiClient {
   deleteGroup(groupId: string): Promise<{ ok: true }> {
     return this.request(`/groups/${groupId}`, { method: "DELETE" });
   }
+
+  /** この端末が参加しているグループの一覧を、端末内の保存内容に頼らずDBから取得する。 */
+  getMyMemberships(): Promise<{
+    memberships: { groupId: string; memberId: string; myName: string; inviteCode: string | null }[];
+  }> {
+    return this.request("/memberships", { method: "GET" });
+  }
 }
