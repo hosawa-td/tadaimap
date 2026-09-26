@@ -66,7 +66,9 @@
   .btn-accent{background:var(--accent);color:var(--on-accent);}
   .btn-outline{background:transparent;color:var(--text);border:1.5px solid var(--border);}
   .btn-danger{background:transparent;color:var(--danger);border:1.5px solid var(--danger);}
-  .card{background:var(--surface);border-radius:16px;padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:12px;box-shadow:0 4px 20px -2px rgba(24,36,48,0.05);}
+  .card{background:var(--surface);border-radius:16px;padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:12px;box-shadow:0 4px 20px -2px rgba(24,36,48,0.05);touch-action:pan-y;}
+  .card.dragging{box-shadow:0 10px 28px -4px rgba(24,36,48,0.3);z-index:50;position:relative;}
+  .drag-handle{flex:none;width:26px;height:44px;margin:-8px -6px -8px -4px;display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:18px;line-height:1;cursor:grab;touch-action:none;}
   .avatar{width:44px;height:44px;border-radius:50%;background:var(--surface-sand);color:var(--primary);display:flex;align-items:center;justify-content:center;font-weight:700;flex:none;}
   .avatar.anon{background:var(--away-soft);color:var(--text-muted);}
   .info{flex:1;min-width:0;}
@@ -496,17 +498,62 @@
     return "外出中 · " + formatTime(m.statusUpdatedAt) + "に外出";
   }
 
+  // ---------- ホーム画面の家族一覧の並び替え(この端末だけの表示順、F21相当) ----------
+  function memberOrderKey(groupId) {
+    return "tadaimap-web.memberOrder." + groupId;
+  }
+  function loadMemberOrderWeb(groupId) {
+    var raw = storageGet(memberOrderKey(groupId));
+    if (!raw) return null;
+    try {
+      var parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : null;
+    } catch (e) {
+      return null;
+    }
+  }
+  function saveMemberOrderWeb(groupId, memberIdsInOrder) {
+    storageSet(memberOrderKey(groupId), JSON.stringify(memberIdsInOrder));
+  }
+  function applyMemberOrderWeb(members, order) {
+    if (!order) {
+      var me = members.filter(function (m) { return m.isMe; })[0];
+      var others = members.filter(function (m) { return !m.isMe; });
+      return me ? [me].concat(others) : members;
+    }
+    var byId = {};
+    members.forEach(function (m) { byId[m.memberId] = m; });
+    var ordered = [];
+    order.forEach(function (id) {
+      if (byId[id]) {
+        ordered.push(byId[id]);
+        delete byId[id];
+      }
+    });
+    members.forEach(function (m) {
+      if (byId[m.memberId]) ordered.push(m);
+    });
+    return ordered;
+  }
+
+  var lastFetchedMembers = [];
+
   function renderMembers(members) {
+    lastFetchedMembers = members;
+    var groupId = storageGet(STORAGE.groupId);
+    var ordered = applyMemberOrderWeb(members, groupId ? loadMemberOrderWeb(groupId) : null);
     var list = el("member-list");
     list.innerHTML = "";
     var home = 0;
-    members.forEach(function (m) {
+    ordered.forEach(function (m, index) {
       if (m.status === "home") home++;
       var card = document.createElement("div");
       var clickable = amIAdmin && !m.isMe;
       card.className = "card" + (clickable ? " clickable" : "");
+      card.__memberId = m.memberId;
       var initial = m.nameOrAnonymous.slice(0, 1);
       card.innerHTML =
+        '<div class="drag-handle" aria-label="並び替え">⠿</div>' +
         '<div class="avatar' + (m.isMe || m.nameOrAnonymous !== "メンバー" ? "" : " anon") + '">' + initial + "</div>" +
         '<div class="info">' +
           '<div class="name-row">' + m.nameOrAnonymous +
@@ -518,11 +565,68 @@
         "</div>" +
         '<div class="status ' + m.status + '">' + statusLabel(m) + "</div>";
       if (clickable) {
-        card.addEventListener("click", function () { openStatusModal(m); });
+        card.addEventListener("click", function (e) {
+          if (e.target.closest(".drag-handle")) return;
+          openStatusModal(m);
+        });
       }
       list.appendChild(card);
+      attachDragHandle(card.querySelector(".drag-handle"), card, ordered, groupId);
     });
     el("home-count").textContent = "現在" + home + "/" + members.length + "人 在宅中";
+  }
+
+  /**
+   * ハンドルを指で押して動かすと、その行を並び替えられるようにする。
+   * (この端末だけの見た目の設定。ドラッグ確定時にmemberIdの並び順を端末内に保存する)
+   */
+  function attachDragHandle(handleEl, card, orderedAtRenderTime, groupId) {
+    if (!handleEl || !groupId) return;
+    var list = el("member-list");
+    var dragging = false;
+    var startY = 0;
+    var offsetY = 0;
+
+    function onPointerMove(e) {
+      if (!dragging) return;
+      offsetY = e.clientY - startY;
+      card.style.transform = "translateY(" + offsetY + "px)";
+    }
+
+    function onPointerUp() {
+      if (!dragging) return;
+      dragging = false;
+      document.removeEventListener("pointermove", onPointerMove);
+      document.removeEventListener("pointerup", onPointerUp);
+
+      // 並び替え先の判定は、transformで動いた「見た目の位置」がまだ残っているうちに行う
+      var siblings = Array.prototype.filter.call(list.children, function (c) { return c !== card; });
+      var cardRect = card.getBoundingClientRect();
+      var currentCenter = cardRect.top + cardRect.height / 2;
+      var newIndex = siblings.length;
+      for (var i = 0; i < siblings.length; i++) {
+        var rect = siblings[i].getBoundingClientRect();
+        if (currentCenter < rect.top + rect.height / 2) {
+          newIndex = i;
+          break;
+        }
+      }
+      var order = orderedAtRenderTime.map(function (m) { return m.memberId; });
+      var draggedId = order.splice(order.indexOf(card.__memberId), 1)[0];
+      order.splice(newIndex, 0, draggedId);
+      saveMemberOrderWeb(groupId, order);
+      renderMembers(lastFetchedMembers);
+    }
+
+    handleEl.addEventListener("pointerdown", function (e) {
+      dragging = true;
+      startY = e.clientY;
+      offsetY = 0;
+      card.classList.add("dragging");
+      document.addEventListener("pointermove", onPointerMove);
+      document.addEventListener("pointerup", onPointerUp);
+      e.preventDefault();
+    });
   }
 
   var myStatus = "away";
