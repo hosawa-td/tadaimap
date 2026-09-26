@@ -10,12 +10,16 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ApiClient, MemberView, PresenceStatus } from "../api";
 import { getOrCreateDeviceId } from "../deviceId";
 import {
-  clearMembership,
+  addMembership,
+  clearAllMemberships,
   loadHomeGeofenceConfig,
-  loadMembership,
+  loadMemberships,
+  Membership,
+  removeMembership,
   saveHomeGeofenceConfig,
-  saveMembership,
+  setCurrentGroupId,
   STORAGE_KEYS,
+  updateMembershipName,
 } from "../storage";
 import { BUILDING_RADIUS_DEFAULT, NEARBY_LABEL_DEFAULT, RADIUS_DEFAULT } from "../validation";
 import { registerForPushNotifications, subscribeToNotifications } from "../notifications";
@@ -38,12 +42,16 @@ interface AppContextValue {
   amIAdmin: boolean;
   inviteCode: string | null;
   members: MemberView[];
+  /** 参加中の家族グループ一覧(1台の端末で複数のグループに参加できる)。 */
+  memberships: Membership[];
   loading: boolean;
   errorMessage: string | null;
 
   createGroup: (name: string) => Promise<{ inviteCode: string }>;
   joinGroup: (inviteCode: string, name: string) => Promise<void>;
-  refreshMembers: () => Promise<void>;
+  /** 参加中の別のグループに切り替える。 */
+  switchGroup: (groupId: string) => Promise<void>;
+  refreshMembers: (targetGroupId?: string) => Promise<void>;
   saveHome: (lat: number, lng: number, homeRadiusM: number, buildingRadiusM: number) => Promise<void>;
   setStatus: (status: PresenceStatus, source: "auto" | "manual") => Promise<void>;
   setMemberStatus: (targetMemberId: string, status: PresenceStatus) => Promise<void>;
@@ -53,6 +61,10 @@ interface AppContextValue {
   setNotifyEnabled: (value: boolean) => Promise<void>;
   refreshInviteCode: () => Promise<string>;
   leaveGroup: () => Promise<void>;
+  /** 管理者が自分以外のメンバーを削除する。 */
+  removeMember: (targetMemberId: string) => Promise<void>;
+  /** 管理者がいまのグループそのものを削除する。 */
+  deleteGroup: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | undefined>(undefined);
@@ -70,6 +82,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [nearbyLabel, setNearbyLabelState] = useState(NEARBY_LABEL_DEFAULT);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [members, setMembers] = useState<MemberView[]>([]);
+  const [memberships, setMemberships] = useState<Membership[]>([]);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -79,11 +92,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       const id = await getOrCreateDeviceId();
       setDeviceId(id);
-      const stored = await loadMembership();
-      if (stored.groupId && stored.memberId) {
-        setGroupId(stored.groupId);
-        setMemberId(stored.memberId);
-        setMyName(stored.myName ?? "");
+      const stored = await loadMemberships();
+      setMemberships(stored.memberships);
+      const current = stored.memberships.find((m) => m.groupId === stored.currentGroupId);
+      if (current) {
+        setGroupId(current.groupId);
+        setMemberId(current.memberId);
+        setMyName(current.myName);
       }
       const geofenceConfig = await loadHomeGeofenceConfig();
       if (geofenceConfig) {
@@ -107,13 +122,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const refreshMembers = useCallback(async () => {
-    if (!api || !groupId) return;
-    const result = await api.getMembers(groupId);
-    setInviteCode(result.inviteCode);
-    setMembers(result.members);
-    setNearbyLabelState(result.nearbyLabel);
-  }, [api, groupId]);
+  const refreshMembers = useCallback(
+    async (targetGroupId?: string) => {
+      const effectiveGroupId = targetGroupId ?? groupId;
+      if (!api || !effectiveGroupId) return;
+      const result = await api.getMembers(effectiveGroupId);
+      setInviteCode(result.inviteCode);
+      setMembers(result.members);
+      setNearbyLabelState(result.nearbyLabel);
+    },
+    [api, groupId]
+  );
 
   useEffect(() => {
     // 帰宅・外出のプッシュ通知を受け取った瞬間に、一覧をその場で最新化する
@@ -129,11 +148,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!api) throw new Error("初期化中です");
       return withLoading(async () => {
         const result = await api.createGroup(name);
+        const membership: Membership = { groupId: result.groupId, memberId: result.memberId, myName: name };
         setGroupId(result.groupId);
         setMemberId(result.memberId);
         setMyName(name);
         setInviteCode(result.inviteCode);
-        await saveMembership(result.groupId, result.memberId, name);
+        await addMembership(membership);
+        setMemberships((prev) => [...prev.filter((m) => m.groupId !== membership.groupId), membership]);
         return { inviteCode: result.inviteCode };
       });
     },
@@ -145,13 +166,32 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!api) throw new Error("初期化中です");
       await withLoading(async () => {
         const result = await api.joinGroup(inviteCode2, name);
+        const membership: Membership = { groupId: result.groupId, memberId: result.memberId, myName: name };
         setGroupId(result.groupId);
         setMemberId(result.memberId);
         setMyName(name);
-        await saveMembership(result.groupId, result.memberId, name);
+        await addMembership(membership);
+        setMemberships((prev) => [...prev.filter((m) => m.groupId !== membership.groupId), membership]);
       });
     },
     [api, withLoading]
+  );
+
+  const switchGroup = useCallback(
+    async (targetGroupId: string) => {
+      const target = memberships.find((m) => m.groupId === targetGroupId);
+      if (!target) return;
+      await withLoading(async () => {
+        await setCurrentGroupId(target.groupId);
+        setGroupId(target.groupId);
+        setMemberId(target.memberId);
+        setMyName(target.myName);
+        setInviteCode(null);
+        setMembers([]);
+        await refreshMembers(target.groupId);
+      });
+    },
+    [memberships, withLoading, refreshMembers]
   );
 
   const saveHome = useCallback(
@@ -204,7 +244,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const saveProfile = useCallback(
     async (fields: { name?: string; showName?: boolean }) => {
-      if (!api || !memberId) return;
+      if (!api || !memberId || !groupId) return;
       // 画面のスイッチ/入力欄がすぐに反映されるよう、通信の結果を待たず先に表示を更新する
       // (通信が失敗した場合は元の値に戻す)
       const previousName = myName;
@@ -214,6 +254,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       try {
         await withLoading(async () => {
           await api.updateProfile(memberId, fields);
+          if (fields.name !== undefined) {
+            await updateMembershipName(groupId, fields.name);
+            setMemberships((prev) =>
+              prev.map((m) => (m.groupId === groupId ? { ...m, myName: fields.name as string } : m))
+            );
+          }
           await refreshMembers();
         });
       } catch (err) {
@@ -222,7 +268,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         throw err;
       }
     },
-    [api, memberId, myName, showName, refreshMembers, withLoading]
+    [api, memberId, groupId, myName, showName, refreshMembers, withLoading]
   );
 
   const saveNearbyLabel = useCallback(
@@ -289,19 +335,56 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, [api, groupId, withLoading]);
 
-  const leaveGroup = useCallback(async () => {
-    if (!api || !memberId) return;
-    await withLoading(async () => {
-      await api.leaveGroup(memberId);
-      await stopHomeGeofence();
-      await clearMembership();
+  /** グループ退出・削除の後始末。他に参加中のグループがあれば切り替え、無ければ端末の状態を全てリセットする。 */
+  const settleAfterLeavingCurrentGroup = useCallback(async () => {
+    if (!groupId) return;
+    await stopHomeGeofence();
+    const { memberships: remaining, currentGroupId } = await removeMembership(groupId);
+    setMemberships(remaining);
+    const next = remaining.find((m) => m.groupId === currentGroupId);
+    if (next) {
+      setGroupId(next.groupId);
+      setMemberId(next.memberId);
+      setMyName(next.myName);
+      setInviteCode(null);
+      setMembers([]);
+      await refreshMembers(next.groupId);
+    } else {
+      await clearAllMemberships();
       setGroupId(null);
       setMemberId(null);
       setMyName("");
       setInviteCode(null);
       setMembers([]);
+    }
+  }, [groupId, refreshMembers]);
+
+  const leaveGroup = useCallback(async () => {
+    if (!api || !memberId) return;
+    await withLoading(async () => {
+      await api.leaveGroup(memberId);
+      await settleAfterLeavingCurrentGroup();
     });
-  }, [api, memberId, withLoading]);
+  }, [api, memberId, withLoading, settleAfterLeavingCurrentGroup]);
+
+  const removeMember = useCallback(
+    async (targetMemberId: string) => {
+      if (!api) return;
+      await withLoading(async () => {
+        await api.removeMember(targetMemberId);
+        await refreshMembers();
+      });
+    },
+    [api, refreshMembers, withLoading]
+  );
+
+  const deleteGroup = useCallback(async () => {
+    if (!api || !groupId) return;
+    await withLoading(async () => {
+      await api.deleteGroup(groupId);
+      await settleAfterLeavingCurrentGroup();
+    });
+  }, [api, groupId, withLoading, settleAfterLeavingCurrentGroup]);
 
   const amIAdmin = members.find((m) => m.isMe)?.isAdmin ?? false;
 
@@ -320,10 +403,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     amIAdmin,
     inviteCode,
     members,
+    memberships,
     loading,
     errorMessage,
     createGroup,
     joinGroup,
+    switchGroup,
     refreshMembers,
     saveHome,
     setStatus,
@@ -334,6 +419,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setNotifyEnabled,
     refreshInviteCode,
     leaveGroup,
+    removeMember,
+    deleteGroup,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

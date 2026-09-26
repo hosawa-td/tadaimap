@@ -60,11 +60,12 @@ export class MemoryRepository implements Repository {
     if (new Date(group.inviteCodeExpiresAt).getTime() < Date.now()) {
       throw new AppError("CODE_EXPIRED", "招待コードの有効期限が切れています");
     }
-    const existing = await this.getMemberByDeviceId(deviceId);
+    // 同じグループへの重複登録だけを防ぐ(1台の端末が複数のグループに参加できるようにするため)
+    const existing = await this.getMemberByGroupAndDevice(group.groupId, deviceId);
     if (existing) {
       throw new AppError(
         "ALREADY_JOINED",
-        "この端末は既に別のグループに参加しています"
+        "この端末は既にこのグループに参加しています"
       );
     }
     const now = new Date();
@@ -106,6 +107,14 @@ export class MemoryRepository implements Repository {
   async getMemberByDeviceId(deviceId: string): Promise<Member | null> {
     return (
       [...this.members.values()].find((m) => m.deviceId === deviceId) ?? null
+    );
+  }
+
+  async getMemberByGroupAndDevice(groupId: string, deviceId: string): Promise<Member | null> {
+    return (
+      [...this.members.values()].find(
+        (m) => m.groupId === groupId && m.deviceId === deviceId
+      ) ?? null
     );
   }
 
@@ -159,9 +168,9 @@ export class MemoryRepository implements Repository {
     if (!group) {
       throw new AppError("NOT_FOUND", "グループが見つかりません");
     }
-    const requester = await this.getMemberByDeviceId(deviceId);
+    const requester = await this.getMemberByGroupAndDevice(groupId, deviceId);
     const groupMembers = await this.getMembersByGroup(groupId);
-    if (!requester || requester.groupId !== groupId || !isEffectiveAdmin(requester, groupMembers)) {
+    if (!requester || !isEffectiveAdmin(requester, groupMembers)) {
       throw new AppError("FORBIDDEN", "呼び方を変更する権限がありません");
     }
     group.nearbyLabel = nearbyLabel.trim();
@@ -199,8 +208,8 @@ export class MemoryRepository implements Repository {
   }
 
   async refreshInviteCode(groupId: string, deviceId: string): Promise<Group> {
-    const member = await this.getMemberByDeviceId(deviceId);
-    if (!member || member.groupId !== groupId) {
+    const member = await this.getMemberByGroupAndDevice(groupId, deviceId);
+    if (!member) {
       throw new AppError(
         "FORBIDDEN",
         "このグループの招待コードを再発行する権限がありません"
@@ -223,6 +232,36 @@ export class MemoryRepository implements Repository {
     if (remaining.length === 0) {
       this.groups.delete(member.groupId);
     }
+  }
+
+  async removeMember(memberId: string, requesterDeviceId: string): Promise<void> {
+    const target = this.members.get(memberId);
+    if (!target) {
+      throw new AppError("NOT_FOUND", "メンバーが見つかりません");
+    }
+    const requester = await this.getMemberByGroupAndDevice(target.groupId, requesterDeviceId);
+    const groupMembers = await this.getMembersByGroup(target.groupId);
+    if (!requester || !isEffectiveAdmin(requester, groupMembers)) {
+      throw new AppError("FORBIDDEN", "このメンバーを削除する権限がありません");
+    }
+    if (requester.memberId === target.memberId) {
+      throw new AppError("VALIDATION_ERROR", "自分自身の削除はグループの退出から行ってください");
+    }
+    this.members.delete(target.memberId);
+  }
+
+  async deleteGroup(groupId: string, requesterDeviceId: string): Promise<void> {
+    const group = this.groups.get(groupId);
+    if (!group) {
+      throw new AppError("NOT_FOUND", "グループが見つかりません");
+    }
+    const requester = await this.getMemberByGroupAndDevice(groupId, requesterDeviceId);
+    const groupMembers = await this.getMembersByGroup(groupId);
+    if (!requester || !isEffectiveAdmin(requester, groupMembers)) {
+      throw new AppError("FORBIDDEN", "このグループを削除する権限がありません");
+    }
+    groupMembers.forEach((m) => this.members.delete(m.memberId));
+    this.groups.delete(groupId);
   }
 
   private requireOwnedMember(memberId: string, deviceId: string): Member {
@@ -248,9 +287,9 @@ export class MemoryRepository implements Repository {
     if (member.deviceId === requesterDeviceId) {
       return member;
     }
-    const requester = await this.getMemberByDeviceId(requesterDeviceId);
+    const requester = await this.getMemberByGroupAndDevice(member.groupId, requesterDeviceId);
     const groupMembers = await this.getMembersByGroup(member.groupId);
-    if (!requester || requester.groupId !== member.groupId || !isEffectiveAdmin(requester, groupMembers)) {
+    if (!requester || !isEffectiveAdmin(requester, groupMembers)) {
       throw new AppError("FORBIDDEN", "このメンバーの状態を変更する権限がありません");
     }
     return member;

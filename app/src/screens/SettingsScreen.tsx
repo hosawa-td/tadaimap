@@ -29,11 +29,15 @@ export default function SettingsScreen() {
     nearbyLabel,
     amIAdmin,
     inviteCode,
+    groupId,
+    memberships,
     saveProfile,
     saveNearbyLabel,
     setNotifyEnabled,
     refreshInviteCode,
+    switchGroup,
     leaveGroup,
+    deleteGroup,
   } = useApp();
 
   const [nameDraft, setNameDraft] = useState(myName);
@@ -104,10 +108,49 @@ export default function SettingsScreen() {
         style: "destructive",
         onPress: async () => {
           await leaveGroup();
-          navigation.reset({ index: 0, routes: [{ name: "Start" }] });
+          if (memberships.length <= 1) {
+            navigation.reset({ index: 0, routes: [{ name: "Start" }] });
+          }
         },
       },
     ]);
+  };
+
+  const handleDeleteGroup = () => {
+    Alert.alert(
+      "グループを削除しますか？",
+      "この操作は取り消せません。参加しているメンバー全員がこのグループから削除されます。",
+      [
+        { text: "キャンセル", style: "cancel" },
+        {
+          text: "削除する",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteGroup();
+              if (memberships.length <= 1) {
+                navigation.reset({ index: 0, routes: [{ name: "Start" }] });
+              }
+            } catch (err) {
+              Alert.alert("エラー", err instanceof Error ? err.message : "グループの削除に失敗しました");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleSwitchGroup = async (targetGroupId: string) => {
+    if (targetGroupId === groupId) return;
+    try {
+      await switchGroup(targetGroupId);
+    } catch {
+      Alert.alert("エラー", "グループの切り替えに失敗しました");
+    }
+  };
+
+  const handleAddGroup = () => {
+    navigation.navigate("JoinGroup");
   };
 
   return (
@@ -210,9 +253,47 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
 
+        {memberships.length > 1 && (
+          <>
+            <Text style={styles.sectionTitle}>参加している他のグループ</Text>
+            <View style={styles.card}>
+              {memberships.map((m, i) => (
+                <View key={m.groupId}>
+                  {i > 0 && <View style={styles.divider} />}
+                  <TouchableOpacity
+                    style={styles.row}
+                    onPress={() => handleSwitchGroup(m.groupId)}
+                    disabled={m.groupId === groupId}
+                  >
+                    <View style={styles.rowTextBlock}>
+                      <Text style={styles.rowTitle}>{m.myName}として参加中</Text>
+                      {m.groupId === groupId && <Text style={styles.rowSub}>いま表示しているグループ</Text>}
+                    </View>
+                    {m.groupId !== groupId && <Text style={styles.chevron}>›</Text>}
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
+        <TouchableOpacity style={styles.card} onPress={handleAddGroup}>
+          <View style={styles.row}>
+            <View style={styles.rowTextBlock}>
+              <Text style={styles.rowTitle}>別の招待コードで参加する</Text>
+              <Text style={styles.rowSub}>もう一つの家族グループにも参加できます</Text>
+            </View>
+            <Text style={styles.chevron}>›</Text>
+          </View>
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.dangerButton} onPress={handleLeave}>
           <Text style={styles.dangerButtonText}>グループからの退出</Text>
         </TouchableOpacity>
+        {amIAdmin && (
+          <TouchableOpacity style={[styles.dangerButton, styles.dangerButtonStrong]} onPress={handleDeleteGroup}>
+            <Text style={styles.dangerButtonTextStrong}>グループを削除する</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -254,5 +335,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: "center",
   },
+  dangerButtonStrong: { marginTop: spacing.sm, backgroundColor: colors.danger },
   dangerButtonText: { color: colors.danger, ...typography.labelLg },
+  dangerButtonTextStrong: { color: colors.onPrimary, ...typography.labelLg },
 });

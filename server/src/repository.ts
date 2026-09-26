@@ -17,6 +17,9 @@ export interface Repository {
 
   getMemberByDeviceId(deviceId: string): Promise<Member | null>;
 
+  /** 指定したグループの中で、この端末が持っているメンバー行を返す(1台の端末が複数グループに参加できるため)。 */
+  getMemberByGroupAndDevice(groupId: string, deviceId: string): Promise<Member | null>;
+
   updateHome(
     memberId: string,
     deviceId: string,
@@ -66,7 +69,14 @@ export interface Repository {
 
   refreshInviteCode(groupId: string, deviceId: string): Promise<Group>;
 
+  /** 本人がグループから抜ける。 */
   leaveGroup(memberId: string, deviceId: string): Promise<void>;
+
+  /** 管理者が、自分以外のメンバーをグループから削除する。 */
+  removeMember(memberId: string, requesterDeviceId: string): Promise<void>;
+
+  /** 管理者がグループそのものを削除する(所属メンバー全員も削除される)。 */
+  deleteGroup(groupId: string, requesterDeviceId: string): Promise<void>;
 }
 
 /**

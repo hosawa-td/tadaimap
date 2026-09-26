@@ -16,12 +16,12 @@ APIサーバーが提供するエンドポイント一覧。すべてスプレ�
 - レスポンス：`{ "group_id": string, "member_id": string, "invite_code": string, "invite_code_expires_at": string }`
 - 処理：`Groups`に新規行を追加（招待コード発行、有効期限=現在時刻+7日）。`Members`に自分を1件追加。
 
-### 2. `POST /groups/join` — 招待コードでの参加（F2）
+### 2. `POST /groups/join` — 招待コードでの参加（F2・F18）
 
 - リクエスト：`{ "device_id": string, "invite_code": string, "name": string }`
 - レスポンス：`{ "group_id": string, "member_id": string }`
-- エラー：招待コードが存在しない／期限切れ → `404 CODE_NOT_FOUND` または `410 CODE_EXPIRED`。既に別グループに参加済みの`device_id` → `409 ALREADY_JOINED`
-- 処理：`Groups`から該当コードを検索し、有効期限内なら`Members`に新規行を追加。
+- エラー：招待コードが存在しない／期限切れ → `404 CODE_NOT_FOUND` または `410 CODE_EXPIRED`。**同じグループ**に既に参加済みの`device_id` → `409 ALREADY_JOINED`（別のグループへの参加は妨げない。1台の端末が複数グループに参加できるため）
+- 処理：`Groups`から該当コードを検索し、有効期限内かつ同一グループへの重複でなければ`Members`に新規行を追加。
 
 ### 3. `GET /groups/:groupId/members` — メンバー一覧取得（F5）
 
@@ -92,11 +92,19 @@ APIサーバーが提供するエンドポイント一覧。すべてスプレ�
 - レスポンス：`{ "invite_code": string, "invite_code_expires_at": string }`
 - 処理：新しい6桁コードを発行し、有効期限を現在時刻+7日に更新（古いコードは無効化）。
 
-### 14. `DELETE /members/:memberId` — グループからの退出（F11）
+### 14. `DELETE /members/:memberId` — グループからの退出／管理者によるメンバー削除（F11・F19）
 
 - リクエスト：ヘッダーに`device_id`
 - レスポンス：`{ "ok": true }`
+- 権限：`device_id`が対象メンバー本人のものであれば無条件に許可（退出）。本人以外の場合は、同じグループの管理者であることを確認し、許可する（管理者によるメンバー削除。それ以外は`403 FORBIDDEN`）
 - 処理：該当`Members`行を削除。削除の結果、そのグループの`Members`が0件になった場合は`Groups`の該当行も削除する。
+
+### 15. `DELETE /groups/:groupId` — グループの削除（F20）
+
+- リクエスト：ヘッダーに`device_id`
+- レスポンス：`{ "ok": true }`
+- 権限：グループの管理者のみ（それ以外は`403 FORBIDDEN`）
+- 処理：該当グループに属する`Members`行をすべて削除したうえで、`Groups`の該当行も削除する。
 
 ## Web版の配信について
 

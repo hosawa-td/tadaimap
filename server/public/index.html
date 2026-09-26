@@ -131,6 +131,7 @@
 
     <button class="btn btn-primary" id="join-submit" disabled>参加する</button>
     <p class="hint" id="join-error"></p>
+    <button type="button" class="btn btn-outline" id="join-cancel-btn" hidden>キャンセルして戻る</button>
   </section>
 
   <section id="home-view" hidden>
@@ -193,7 +194,14 @@
     </div>
     <p class="hint" id="notify-hint" style="text-align:center;" hidden></p>
 
+    <div class="section-title">家族グループ</div>
+    <div class="settings-card" id="group-switcher-card" hidden>
+      <div id="group-switcher-list"></div>
+    </div>
+    <button type="button" class="btn btn-outline" id="add-group-btn">別の招待コードで参加する</button>
+
     <button class="btn btn-danger" id="leave-btn">このブラウザをグループから外す</button>
+    <button class="btn btn-danger" id="delete-group-btn" hidden>グループを削除する</button>
     <p class="footnote">通知が有効な場合、通知を受け取ったときにこの画面も自動で更新されます。それ以外は自動更新されないため、最新の状況を見るには再読み込みしてください。</p>
   </section>
 
@@ -206,6 +214,7 @@
       <button type="button" class="modal-btn" data-status="home">在宅にする</button>
       <button type="button" class="modal-btn" id="status-modal-nearby" data-status="nearby">施設内にする</button>
       <button type="button" class="modal-btn" data-status="away">外出中にする</button>
+      <button type="button" class="modal-btn" id="status-modal-remove" style="color:var(--danger);">このメンバーを削除する</button>
       <button type="button" class="modal-btn modal-cancel" id="status-modal-cancel">キャンセル</button>
     </div>
   </div>
@@ -217,23 +226,15 @@
 
   var STORAGE = {
     deviceId: "tadaimap-web.deviceId",
+    // 後方互換のため残しているキー(1端末1グループだった頃の名残)。読み込み時に一度だけ移行する。
     groupId: "tadaimap-web.groupId",
     memberId: "tadaimap-web.memberId",
     myName: "tadaimap-web.myName",
+    memberships: "tadaimap-web.memberships",
+    currentGroupId: "tadaimap-web.currentGroupId",
     notifyEnabled: "tadaimap-web.notifyEnabled",
   };
-
-  function getOrCreateDeviceId() {
-    try {
-      var existing = localStorage.getItem(STORAGE.deviceId);
-      if (existing) return existing;
-      var id = "web-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
-      localStorage.setItem(STORAGE.deviceId, id);
-      return id;
-    } catch (e) {
-      return "web-" + Math.random().toString(36).slice(2);
-    }
-  }
+  var BACKUP_COOKIE = "tadaimap_backup";
 
   function storageGet(key) {
     try { return localStorage.getItem(key); } catch (e) { return null; }
@@ -245,7 +246,129 @@
     try { localStorage.removeItem(key); } catch (e) {}
   }
 
+  // ---------- iPhoneのSafariでlocalStorageが消えてしまった場合の保険 ----------
+  // (原因を完全には制御できないため、cookieにも同じ内容を複製しておき、
+  // localStorageが空のときだけ読み戻す。cookieは1年で失効する)
+  function cookieGet(name) {
+    var match = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+  function cookieSet(name, value) {
+    try {
+      document.cookie = name + "=" + encodeURIComponent(value) + "; max-age=" + (365 * 24 * 60 * 60) + "; path=/; SameSite=Lax";
+    } catch (e) {}
+  }
+  function backupToCookie() {
+    try {
+      cookieSet(BACKUP_COOKIE, JSON.stringify({
+        deviceId: storageGet(STORAGE.deviceId),
+        memberships: storageGet(STORAGE.memberships),
+        currentGroupId: storageGet(STORAGE.currentGroupId),
+      }));
+    } catch (e) {}
+  }
+  function restoreFromCookieIfNeeded() {
+    if (storageGet(STORAGE.deviceId) && storageGet(STORAGE.memberships)) return;
+    var raw = cookieGet(BACKUP_COOKIE);
+    if (!raw) return;
+    try {
+      var backup = JSON.parse(raw);
+      if (backup.deviceId && !storageGet(STORAGE.deviceId)) storageSet(STORAGE.deviceId, backup.deviceId);
+      if (backup.memberships && !storageGet(STORAGE.memberships)) storageSet(STORAGE.memberships, backup.memberships);
+      if (backup.currentGroupId && !storageGet(STORAGE.currentGroupId)) storageSet(STORAGE.currentGroupId, backup.currentGroupId);
+      // groupId/memberId/myNameの単一キー(アクティブなグループの複製)も、この時点で作り直す
+      var restored = loadMemberships();
+      var current = restored.memberships.filter(function (m) { return m.groupId === restored.currentGroupId; })[0];
+      syncActiveMemberPointer(current || null);
+    } catch (e) {}
+  }
+  restoreFromCookieIfNeeded();
+
+  function getOrCreateDeviceId() {
+    var existing = storageGet(STORAGE.deviceId);
+    if (existing) return existing;
+    var id = "web-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    storageSet(STORAGE.deviceId, id);
+    return id;
+  }
+
+  // ---------- 複数の家族グループへの参加(1台の端末が複数グループに参加できる) ----------
+  function loadMemberships() {
+    var raw = storageGet(STORAGE.memberships);
+    var memberships = [];
+    if (raw) {
+      try {
+        var parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) memberships = parsed;
+      } catch (e) {}
+    }
+    if (memberships.length === 0) {
+      // 旧形式(1グループ分のみ)のデータが残っている場合は、新形式に一度だけ移行する
+      var legacyGroupId = storageGet(STORAGE.groupId);
+      var legacyMemberId = storageGet(STORAGE.memberId);
+      if (legacyGroupId && legacyMemberId) {
+        memberships = [{ groupId: legacyGroupId, memberId: legacyMemberId, myName: storageGet(STORAGE.myName) || "" }];
+        storageSet(STORAGE.memberships, JSON.stringify(memberships));
+        storageSet(STORAGE.currentGroupId, legacyGroupId);
+      }
+    }
+    var currentGroupId = storageGet(STORAGE.currentGroupId);
+    if (!currentGroupId || !memberships.some(function (m) { return m.groupId === currentGroupId; })) {
+      currentGroupId = memberships.length > 0 ? memberships[0].groupId : null;
+    }
+    return { memberships: memberships, currentGroupId: currentGroupId };
+  }
+
+  function saveMemberships(memberships) {
+    storageSet(STORAGE.memberships, JSON.stringify(memberships));
+    backupToCookie();
+  }
+
+  // 画面の他の場所では引き続き STORAGE.groupId / memberId / myName を
+  // 「いまアクティブなグループ」の複製として参照しているため、切り替えのたびに同期する。
+  function syncActiveMemberPointer(membership) {
+    if (membership) {
+      storageSet(STORAGE.groupId, membership.groupId);
+      storageSet(STORAGE.memberId, membership.memberId);
+      storageSet(STORAGE.myName, membership.myName || "");
+    } else {
+      storageRemove(STORAGE.groupId);
+      storageRemove(STORAGE.memberId);
+      storageRemove(STORAGE.myName);
+    }
+  }
+
+  function setCurrentGroupId(groupId) {
+    storageSet(STORAGE.currentGroupId, groupId);
+    var membership = loadMemberships().memberships.filter(function (m) { return m.groupId === groupId; })[0];
+    syncActiveMemberPointer(membership || null);
+    backupToCookie();
+  }
+
+  function addMembership(membership) {
+    var memberships = loadMemberships().memberships.filter(function (m) { return m.groupId !== membership.groupId; });
+    memberships.push(membership);
+    saveMemberships(memberships);
+    setCurrentGroupId(membership.groupId);
+  }
+
+  function removeMembershipLocal(groupId) {
+    var state = loadMemberships();
+    var next = state.memberships.filter(function (m) { return m.groupId !== groupId; });
+    saveMemberships(next);
+    var nextCurrent = state.currentGroupId === groupId ? (next[0] ? next[0].groupId : null) : state.currentGroupId;
+    if (nextCurrent) {
+      setCurrentGroupId(nextCurrent);
+    } else {
+      storageRemove(STORAGE.currentGroupId);
+      syncActiveMemberPointer(null);
+      backupToCookie();
+    }
+    return { memberships: next, currentGroupId: nextCurrent };
+  }
+
   var deviceId = getOrCreateDeviceId();
+  backupToCookie();
   var API_BASE = window.location.origin;
 
   function el(id) { return document.getElementById(id); }
@@ -303,19 +426,18 @@
     joinError.textContent = "";
     joinSubmit.disabled = true;
     try {
+      var name = joinName.value.trim();
       var result = await api("/groups/join", {
         method: "POST",
-        body: { deviceId: deviceId, inviteCode: joinCode.value, name: joinName.value.trim() },
+        body: { deviceId: deviceId, inviteCode: joinCode.value, name: name },
       });
-      storageSet(STORAGE.groupId, result.groupId);
-      storageSet(STORAGE.memberId, result.memberId);
-      storageSet(STORAGE.myName, joinName.value.trim());
+      addMembership({ groupId: result.groupId, memberId: result.memberId, myName: name });
       showHomeView();
     } catch (err) {
       var messages = {
         CODE_NOT_FOUND: "招待コードが見つかりません。もう一度確認してください。",
         CODE_EXPIRED: "招待コードの有効期限が切れています。発行した方に再発行を依頼してください。",
-        ALREADY_JOINED: "この端末は既に別のグループに参加しています。",
+        ALREADY_JOINED: "この端末は既にこのグループに参加しています。",
       };
       joinError.textContent = messages[err.code] || err.message;
       joinSubmit.disabled = false;
@@ -399,6 +521,7 @@
         el("home-detail-clear").disabled = myHomeDetail.length === 0;
       }
       el("admin-hint").hidden = !amIAdmin;
+      el("delete-group-btn").hidden = !amIAdmin;
       el("settings-nearby-label").hidden = !amIAdmin;
       el("nearby-label-readonly").hidden = amIAdmin;
       el("nearby-label-sub").textContent = amIAdmin
@@ -418,8 +541,63 @@
       el("switch-notify").classList.toggle("on", storageGet(STORAGE.notifyEnabled) === "1");
     } catch (err) {
       showToast(err.message);
+    } finally {
+      // メンバー取得に失敗した場合でも、他の参加中グループへは切り替えられるようにしておく
+      renderGroupSwitcher();
     }
   }
+
+  // ---------- 複数グループの切り替え ----------
+  function renderGroupSwitcher() {
+    var state = loadMemberships();
+    var card = el("group-switcher-card");
+    var list = el("group-switcher-list");
+    if (state.memberships.length <= 1) {
+      card.hidden = true;
+      return;
+    }
+    card.hidden = false;
+    list.innerHTML = "";
+    state.memberships.forEach(function (m, i) {
+      var row = document.createElement("div");
+      row.className = "row" + (i > 0 ? "" : "");
+      if (i > 0) row.style.marginTop = "12px";
+      if (i > 0) row.style.paddingTop = "12px";
+      if (i > 0) row.style.borderTop = "1px solid var(--border)";
+      var isCurrent = m.groupId === state.currentGroupId;
+      row.innerHTML =
+        '<div><div class="row-title">' + (m.myName || "自分") + "として参加中</div>" +
+        (isCurrent ? '<div class="row-sub">いま表示しているグループ</div>' : "") + "</div>" +
+        (isCurrent ? "" : '<button type="button" class="smallish-btn" style="border:1.5px solid var(--border);background:var(--surface);border-radius:100px;padding:7px 14px;font-size:13px;font-weight:700;color:var(--text);cursor:pointer;">切り替え</button>');
+      if (!isCurrent) {
+        row.querySelector("button").addEventListener("click", function () {
+          setCurrentGroupId(m.groupId);
+          showHomeView();
+        });
+      }
+      list.appendChild(row);
+    });
+  }
+
+  el("add-group-btn").addEventListener("click", function () {
+    showJoinView();
+  });
+
+  el("join-cancel-btn").addEventListener("click", function () {
+    showHomeView();
+  });
+
+  el("delete-group-btn").addEventListener("click", async function () {
+    var groupId = storageGet(STORAGE.groupId);
+    if (!groupId) return;
+    if (!confirm("グループを削除しますか？この操作は取り消せません。参加しているメンバー全員がこのグループから削除されます。")) return;
+    try {
+      await api("/groups/" + groupId, { method: "DELETE" });
+      settleAfterLeavingCurrentGroup(groupId);
+    } catch (err) {
+      showToast(err.message);
+    }
+  });
 
   async function sendStatus(memberId, status, successMessage) {
     try {
@@ -469,6 +647,20 @@
       closeStatusModal();
     });
   });
+  el("status-modal-remove").addEventListener("click", function () {
+    if (!statusModalTarget) return;
+    var target = statusModalTarget;
+    closeStatusModal();
+    if (!confirm(target.nameOrAnonymous + "を削除しますか？削除すると、この家族はグループから外れます。もう一度参加するには招待コードが必要になります。")) return;
+    api("/members/" + target.memberId, { method: "DELETE" })
+      .then(function () {
+        showToast(target.nameOrAnonymous + "を削除しました");
+        loadHome();
+      })
+      .catch(function (err) {
+        showToast(err.message);
+      });
+  });
 
   var settingsName = el("settings-name");
   settingsName.addEventListener("change", async function () {
@@ -477,6 +669,11 @@
     if (!memberId || value.length === 0) return;
     try {
       await api("/members/" + memberId + "/profile", { method: "PATCH", body: { deviceId: deviceId, name: value } });
+      var groupId = storageGet(STORAGE.groupId);
+      var memberships = loadMemberships().memberships.map(function (m) {
+        return m.groupId === groupId ? Object.assign({}, m, { myName: value }) : m;
+      });
+      saveMemberships(memberships);
       storageSet(STORAGE.myName, value);
       showToast("名前を変更しました");
       loadHome();
@@ -687,20 +884,27 @@
   });
 
   el("leave-btn").addEventListener("click", async function () {
+    var groupId = storageGet(STORAGE.groupId);
     var memberId = storageGet(STORAGE.memberId);
-    if (!memberId) return;
+    if (!memberId || !groupId) return;
     if (!confirm("このブラウザをグループから外しますか？")) return;
     try {
       await api("/members/" + memberId, { method: "DELETE" });
     } catch (err) {
       // 退出済みなど、失敗しても画面はリセットする
     }
-    storageRemove(STORAGE.groupId);
-    storageRemove(STORAGE.memberId);
-    storageRemove(STORAGE.myName);
-    storageRemove(STORAGE.notifyEnabled);
-    showJoinView();
+    settleAfterLeavingCurrentGroup(groupId);
   });
+
+  function settleAfterLeavingCurrentGroup(groupId) {
+    var result = removeMembershipLocal(groupId);
+    storageRemove(STORAGE.notifyEnabled);
+    if (result.currentGroupId) {
+      showHomeView();
+    } else {
+      showJoinView();
+    }
+  }
 
   function showJoinView() {
     el("join-view").hidden = false;
@@ -709,6 +913,7 @@
     joinName.value = "";
     joinError.textContent = "";
     updateJoinButton();
+    el("join-cancel-btn").hidden = loadMemberships().memberships.length === 0;
   }
 
   function showHomeView() {

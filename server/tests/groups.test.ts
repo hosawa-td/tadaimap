@@ -79,7 +79,7 @@ describe("POST /groups/join", () => {
     expect(res.body.error.code).toBe("CODE_EXPIRED");
   });
 
-  it("既に別グループに参加済みの端末はALREADY_JOINEDになる", async () => {
+  it("1台の端末が複数のグループに参加できる", async () => {
     const { app } = buildApp();
     const groupA = await request(app).post("/groups").send({ deviceId: "dev-1", name: "さくら" });
     const groupB = await request(app).post("/groups").send({ deviceId: "dev-2", name: "たかし" });
@@ -88,9 +88,24 @@ describe("POST /groups/join", () => {
       .post("/groups/join")
       .send({ deviceId: "dev-1", inviteCode: groupB.body.inviteCode, name: "さくら" });
 
+    expect(res.status).toBe(200);
+    expect(res.body.groupId).toBe(groupB.body.groupId);
+    expect(groupA.status).toBe(200);
+  });
+
+  it("同じグループに同じ端末から重複して参加しようとするとALREADY_JOINEDになる", async () => {
+    const { app } = buildApp();
+    const groupA = await request(app).post("/groups").send({ deviceId: "dev-1", name: "さくら" });
+    await request(app)
+      .post("/groups/join")
+      .send({ deviceId: "dev-2", inviteCode: groupA.body.inviteCode, name: "お母さん" });
+
+    const res = await request(app)
+      .post("/groups/join")
+      .send({ deviceId: "dev-2", inviteCode: groupA.body.inviteCode, name: "お母さん" });
+
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("ALREADY_JOINED");
-    expect(groupA.status).toBe(200);
   });
 
   it("招待コードの桁数が不正な場合はVALIDATION_ERRORになる", async () => {

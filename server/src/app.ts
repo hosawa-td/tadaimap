@@ -333,7 +333,7 @@ export function createApp(
     })
   );
 
-  // F11: グループからの退出
+  // F11: グループからの退出。管理者が自分以外のメンバーを削除する場合もこのエンドポイントを使う。
   app.delete(
     "/members/:memberId",
     asyncHandler(async (req, res) => {
@@ -342,7 +342,29 @@ export function createApp(
       if (!isValidDeviceId(deviceId)) {
         throw new AppError("VALIDATION_ERROR", "device_idは必須です");
       }
-      await repository.leaveGroup(memberId, deviceId);
+      const target = await repository.getMemberById(memberId);
+      if (!target) {
+        throw new AppError("NOT_FOUND", "メンバーが見つかりません");
+      }
+      if (target.deviceId === deviceId) {
+        await repository.leaveGroup(memberId, deviceId);
+      } else {
+        await repository.removeMember(memberId, deviceId);
+      }
+      res.status(200).json({ ok: true });
+    })
+  );
+
+  // 管理者によるグループ自体の削除(所属メンバー全員も削除される)
+  app.delete(
+    "/groups/:groupId",
+    asyncHandler(async (req, res) => {
+      const deviceId = getDeviceId(req);
+      const { groupId } = req.params;
+      if (!isValidDeviceId(deviceId)) {
+        throw new AppError("VALIDATION_ERROR", "device_idは必須です");
+      }
+      await repository.deleteGroup(groupId, deviceId);
       res.status(200).json({ ok: true });
     })
   );

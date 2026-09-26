@@ -1,9 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export const STORAGE_KEYS = {
+  // 後方互換のため残しているキー(1端末1グループだった頃の名残)。読み込み時に一度だけ移行する。
   groupId: "tadaimap.groupId",
   memberId: "tadaimap.memberId",
   myName: "tadaimap.myName",
+  memberships: "tadaimap.memberships",
+  currentGroupId: "tadaimap.currentGroupId",
   showName: "tadaimap.showName",
   notifyEnabled: "tadaimap.notifyEnabled",
   homeRadiusM: "tadaimap.homeRadiusM",
@@ -13,30 +16,123 @@ export const STORAGE_KEYS = {
   homeLng: "tadaimap.homeLng",
 } as const;
 
-export async function saveMembership(groupId: string, memberId: string, name: string): Promise<void> {
-  await AsyncStorage.multiSet([
-    [STORAGE_KEYS.groupId, groupId],
-    [STORAGE_KEYS.memberId, memberId],
-    [STORAGE_KEYS.myName, name],
-  ]);
+/** 1台の端末が複数の家族グループに参加できるように、参加中のグループを配列で保持する。 */
+export interface Membership {
+  groupId: string;
+  memberId: string;
+  myName: string;
 }
 
-export async function loadMembership(): Promise<{
-  groupId: string | null;
-  memberId: string | null;
-  myName: string | null;
+async function readMembershipsRaw(): Promise<Membership[]> {
+  const raw = await AsyncStorage.getItem(STORAGE_KEYS.memberships);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeMemberships(list: Membership[]): Promise<void> {
+  await AsyncStorage.setItem(STORAGE_KEYS.memberships, JSON.stringify(list));
+}
+
+/**
+ * バックグラウンドの位置情報タスク(location.ts)は別のJSコンテキストで動くため、
+ * 一覧を都度読み直す代わりに「いまアクティブなグループのmemberId」を単一キーへ複製しておく。
+ */
+async function syncActiveMemberPointer(membership: Membership | null): Promise<void> {
+  if (membership) {
+    await AsyncStorage.multiSet([
+      [STORAGE_KEYS.groupId, membership.groupId],
+      [STORAGE_KEYS.memberId, membership.memberId],
+      [STORAGE_KEYS.myName, membership.myName],
+    ]);
+  } else {
+    await AsyncStorage.multiRemove([STORAGE_KEYS.groupId, STORAGE_KEYS.memberId, STORAGE_KEYS.myName]);
+  }
+}
+
+/**
+ * 参加中のグループ一覧と、現在アクティブなグループIDを読み込む。
+ * まだ新形式のデータが無く、旧形式(1グループ分のみ)のデータが残っている端末では、
+ * このタイミングで新形式に一度だけ移行する。
+ */
+export async function loadMemberships(): Promise<{
+  memberships: Membership[];
+  currentGroupId: string | null;
 }> {
-  const values = await AsyncStorage.multiGet([
-    STORAGE_KEYS.groupId,
-    STORAGE_KEYS.memberId,
-    STORAGE_KEYS.myName,
-  ]);
-  const map = Object.fromEntries(values);
-  return {
-    groupId: map[STORAGE_KEYS.groupId] ?? null,
-    memberId: map[STORAGE_KEYS.memberId] ?? null,
-    myName: map[STORAGE_KEYS.myName] ?? null,
-  };
+  let memberships = await readMembershipsRaw();
+  let currentGroupId = await AsyncStorage.getItem(STORAGE_KEYS.currentGroupId);
+
+  if (memberships.length === 0) {
+    const legacy = await AsyncStorage.multiGet([
+      STORAGE_KEYS.groupId,
+      STORAGE_KEYS.memberId,
+      STORAGE_KEYS.myName,
+    ]);
+    const legacyMap = Object.fromEntries(legacy);
+    const legacyGroupId = legacyMap[STORAGE_KEYS.groupId];
+    const legacyMemberId = legacyMap[STORAGE_KEYS.memberId];
+    if (legacyGroupId && legacyMemberId) {
+      memberships = [
+        { groupId: legacyGroupId, memberId: legacyMemberId, myName: legacyMap[STORAGE_KEYS.myName] ?? "" },
+      ];
+      currentGroupId = legacyGroupId;
+      await writeMemberships(memberships);
+      await AsyncStorage.setItem(STORAGE_KEYS.currentGroupId, legacyGroupId);
+      // groupId/memberId/myNameの単一キーは、location.tsが参照する「現在アクティブなグループ」の
+      // 複製として引き続き使うため、ここでは削除しない(値は既に一致している)。
+    }
+  }
+
+  if (!currentGroupId || !memberships.some((m) => m.groupId === currentGroupId)) {
+    currentGroupId = memberships[0]?.groupId ?? null;
+  }
+
+  return { memberships, currentGroupId };
+}
+
+/** グループへの参加(作成含む)を、参加中グループの一覧に追加し、アクティブなグループとして選択する。 */
+export async function addMembership(membership: Membership): Promise<void> {
+  const { memberships } = await loadMemberships();
+  const next = [...memberships.filter((m) => m.groupId !== membership.groupId), membership];
+  await writeMemberships(next);
+  await AsyncStorage.setItem(STORAGE_KEYS.currentGroupId, membership.groupId);
+  await syncActiveMemberPointer(membership);
+}
+
+/** グループの退出・削除にともなって、参加中グループの一覧から取り除く。 */
+export async function removeMembership(
+  groupId: string
+): Promise<{ memberships: Membership[]; currentGroupId: string | null }> {
+  const { memberships, currentGroupId } = await loadMemberships();
+  const next = memberships.filter((m) => m.groupId !== groupId);
+  await writeMemberships(next);
+  const nextCurrent = currentGroupId === groupId ? next[0]?.groupId ?? null : currentGroupId;
+  if (nextCurrent) {
+    await AsyncStorage.setItem(STORAGE_KEYS.currentGroupId, nextCurrent);
+  } else {
+    await AsyncStorage.removeItem(STORAGE_KEYS.currentGroupId);
+  }
+  await syncActiveMemberPointer(next.find((m) => m.groupId === nextCurrent) ?? null);
+  return { memberships: next, currentGroupId: nextCurrent };
+}
+
+export async function setCurrentGroupId(groupId: string): Promise<void> {
+  const { memberships } = await loadMemberships();
+  await AsyncStorage.setItem(STORAGE_KEYS.currentGroupId, groupId);
+  await syncActiveMemberPointer(memberships.find((m) => m.groupId === groupId) ?? null);
+}
+
+export async function updateMembershipName(groupId: string, myName: string): Promise<void> {
+  const { memberships, currentGroupId } = await loadMemberships();
+  const next = memberships.map((m) => (m.groupId === groupId ? { ...m, myName } : m));
+  await writeMemberships(next);
+  if (currentGroupId === groupId) {
+    await syncActiveMemberPointer(next.find((m) => m.groupId === groupId) ?? null);
+  }
 }
 
 /**
@@ -81,11 +177,14 @@ export async function loadHomeGeofenceConfig(): Promise<{
   return { lat, lng, homeRadiusM, buildingRadiusM };
 }
 
-export async function clearMembership(): Promise<void> {
+/** 参加中のグループが1つも残らなくなったときに、端末に残るすべてのローカル状態を消す。 */
+export async function clearAllMemberships(): Promise<void> {
   await AsyncStorage.multiRemove([
     STORAGE_KEYS.groupId,
     STORAGE_KEYS.memberId,
     STORAGE_KEYS.myName,
+    STORAGE_KEYS.memberships,
+    STORAGE_KEYS.currentGroupId,
     STORAGE_KEYS.showName,
     STORAGE_KEYS.notifyEnabled,
     STORAGE_KEYS.homeRadiusM,

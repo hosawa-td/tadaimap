@@ -152,4 +152,14 @@ export class ApiClient {
   leaveGroup(memberId: string): Promise<{ ok: true }> {
     return this.request(`/members/${memberId}`, { method: "DELETE" });
   }
+
+  /** 管理者が自分以外のメンバーを削除する(退出と同じエンドポイントで、権限はサーバー側が判定する)。 */
+  removeMember(memberId: string): Promise<{ ok: true }> {
+    return this.request(`/members/${memberId}`, { method: "DELETE" });
+  }
+
+  /** 管理者がグループそのものを削除する(所属メンバー全員も削除される)。 */
+  deleteGroup(groupId: string): Promise<{ ok: true }> {
+    return this.request(`/groups/${groupId}`, { method: "DELETE" });
+  }
 }

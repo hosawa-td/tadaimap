@@ -53,4 +53,28 @@ describe("ApiClient", () => {
       expect.objectContaining({ method: "GET" })
     );
   });
+
+  it("removeMemberはDELETEリクエストを送る", async () => {
+    mockFetchOnce(200, { ok: true });
+    const client = new ApiClient("http://api.example.com", "dev-1");
+
+    await client.removeMember("m2");
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://api.example.com/members/m2",
+      expect.objectContaining({ method: "DELETE" })
+    );
+  });
+
+  it("deleteGroupはDELETEリクエストを送る", async () => {
+    mockFetchOnce(200, { ok: true });
+    const client = new ApiClient("http://api.example.com", "dev-1");
+
+    await client.deleteGroup("g1");
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://api.example.com/groups/g1",
+      expect.objectContaining({ method: "DELETE" })
+    );
+  });
 });

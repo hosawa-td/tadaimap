@@ -4,6 +4,8 @@ import {
   Alert,
   FlatList,
   Keyboard,
+  Modal,
+  Pressable,
   RefreshControl,
   StyleSheet,
   Text,
@@ -29,11 +31,13 @@ export default function HomeScreen() {
     nearbyLabel,
     amIAdmin,
     saveHomeDetail,
+    removeMember,
   } = useApp();
   const [refreshing, setRefreshing] = useState(false);
   const [sending, setSending] = useState(false);
   const [homeDetailDraft, setHomeDetailDraft] = useState("");
   const [editingHomeDetail, setEditingHomeDetail] = useState(false);
+  const [adminTarget, setAdminTarget] = useState<MemberView | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -92,14 +96,37 @@ export default function HomeScreen() {
   };
 
   const handleAdminChangeStatus = (target: MemberView) => {
+    setAdminTarget(target);
+  };
+
+  const closeAdminModal = () => setAdminTarget(null);
+
+  const handleAdminSetStatus = (status: PresenceStatus) => {
+    if (!adminTarget) return;
+    setMemberStatus(adminTarget.memberId, status);
+    closeAdminModal();
+  };
+
+  const handleAdminRemoveMember = () => {
+    if (!adminTarget) return;
+    const target = adminTarget;
+    closeAdminModal();
     Alert.alert(
-      `${target.nameOrAnonymous}の状態を変更`,
-      "管理者として、この家族の状態を代わりに変更できます。",
+      `${target.nameOrAnonymous}を削除しますか？`,
+      "削除すると、この家族はグループから外れます。もう一度参加するには招待コードが必要になります。",
       [
-        { text: "在宅にする", onPress: () => setMemberStatus(target.memberId, "home") },
-        { text: `${target.nearbyLabel}にする`, onPress: () => setMemberStatus(target.memberId, "nearby") },
-        { text: "外出中にする", onPress: () => setMemberStatus(target.memberId, "away") },
         { text: "キャンセル", style: "cancel" },
+        {
+          text: "削除する",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await removeMember(target.memberId);
+            } catch (err) {
+              Alert.alert("エラー", err instanceof Error ? err.message : "削除に失敗しました");
+            }
+          },
+        },
       ]
     );
   };
@@ -209,6 +236,30 @@ export default function HomeScreen() {
         )}
         ListEmptyComponent={<Text style={styles.empty}>メンバー情報を読み込んでいます…</Text>}
       />
+
+      <Modal visible={adminTarget !== null} transparent animationType="fade" onRequestClose={closeAdminModal}>
+        <Pressable style={styles.modalOverlay} onPress={closeAdminModal}>
+          <Pressable style={styles.modalCard} onPress={() => {}}>
+            <Text style={styles.modalTitle}>{adminTarget?.nameOrAnonymous}の状態を変更</Text>
+            <Text style={styles.modalSub}>管理者として、この家族の状態を代わりに変更できます。</Text>
+            <TouchableOpacity style={styles.modalButton} onPress={() => handleAdminSetStatus("home")}>
+              <Text style={styles.modalButtonText}>在宅にする</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalButton} onPress={() => handleAdminSetStatus("nearby")}>
+              <Text style={styles.modalButtonText}>{adminTarget?.nearbyLabel}にする</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalButton} onPress={() => handleAdminSetStatus("away")}>
+              <Text style={styles.modalButtonText}>外出中にする</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.modalButton, styles.modalButtonDanger]} onPress={handleAdminRemoveMember}>
+              <Text style={styles.modalButtonDangerText}>このメンバーを削除する</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalCancel} onPress={closeAdminModal}>
+              <Text style={styles.modalCancelText}>キャンセル</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -404,4 +455,29 @@ const styles = StyleSheet.create({
   homeDetailCaption: { ...typography.bodySm, color: colors.accent, marginTop: 2, fontWeight: "600" },
   statusPill: { borderRadius: radius.full, paddingHorizontal: spacing.sm, paddingVertical: 6 },
   statusPillText: { ...typography.labelLg, fontSize: 12 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "flex-end",
+  },
+  modalCard: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
+  modalTitle: { ...typography.titleMd, color: colors.textPrimary, marginBottom: spacing.xs },
+  modalSub: { ...typography.bodySm, color: colors.textFaint, marginBottom: spacing.md, lineHeight: 18 },
+  modalButton: {
+    backgroundColor: colors.surfaceSand,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  modalButtonText: { ...typography.bodyMd, color: colors.textPrimary, fontWeight: "600" },
+  modalButtonDanger: { backgroundColor: "transparent", borderWidth: 1.5, borderColor: colors.danger },
+  modalButtonDangerText: { ...typography.bodyMd, color: colors.danger, fontWeight: "600" },
+  modalCancel: { alignItems: "center", padding: spacing.sm, marginTop: spacing.xs },
+  modalCancelText: { ...typography.labelLg, color: colors.textFaint },
 });

@@ -119,21 +119,29 @@ export class SheetsRepository implements Repository {
   }
 
   private async deleteRow(sheetName: string, sheetId: number, rowNumber1Based: number) {
+    await this.deleteRows(sheetName, sheetId, [rowNumber1Based]);
+  }
+
+  /**
+   * 複数行をまとめて削除する。行番号が大きい順に削除リクエストを並べることで、
+   * 1件削除するたびに以降の行番号がずれる問題を避ける。
+   */
+  private async deleteRows(sheetName: string, sheetId: number, rowNumbers1Based: number[]) {
+    if (rowNumbers1Based.length === 0) return;
+    const sorted = [...rowNumbers1Based].sort((a, b) => b - a);
     await this.sheetsApi.spreadsheets.batchUpdate({
       spreadsheetId: this.spreadsheetId,
       requestBody: {
-        requests: [
-          {
-            deleteDimension: {
-              range: {
-                sheetId,
-                dimension: "ROWS",
-                startIndex: rowNumber1Based - 1,
-                endIndex: rowNumber1Based,
-              },
+        requests: sorted.map((rowNumber1Based) => ({
+          deleteDimension: {
+            range: {
+              sheetId,
+              dimension: "ROWS",
+              startIndex: rowNumber1Based - 1,
+              endIndex: rowNumber1Based,
             },
           },
-        ],
+        })),
       },
     });
   }
@@ -276,9 +284,10 @@ export class SheetsRepository implements Repository {
     if (new Date(found.group.inviteCodeExpiresAt).getTime() < Date.now()) {
       throw new AppError("CODE_EXPIRED", "招待コードの有効期限が切れています");
     }
-    const existing = await this.getMemberByDeviceId(deviceId);
+    // 同じグループへの重複登録だけを防ぐ(1台の端末が複数のグループに参加できるようにするため)
+    const existing = await this.getMemberByGroupAndDevice(found.group.groupId, deviceId);
     if (existing) {
-      throw new AppError("ALREADY_JOINED", "この端末は既に別のグループに参加しています");
+      throw new AppError("ALREADY_JOINED", "この端末は既にこのグループに参加しています");
     }
     const now = new Date();
     const member: Member = {
@@ -322,6 +331,12 @@ export class SheetsRepository implements Repository {
   async getMemberByDeviceId(deviceId: string): Promise<Member | null> {
     const rows = await this.readSheet(MEMBERS_SHEET);
     const row = rows.slice(1).find((r) => r[2] === deviceId);
+    return row ? this.rowToMember(row) : null;
+  }
+
+  async getMemberByGroupAndDevice(groupId: string, deviceId: string): Promise<Member | null> {
+    const rows = await this.readSheet(MEMBERS_SHEET);
+    const row = rows.slice(1).find((r) => r[1] === groupId && r[2] === deviceId);
     return row ? this.rowToMember(row) : null;
   }
 
@@ -377,13 +392,9 @@ export class SheetsRepository implements Repository {
     if (found.member.deviceId === requesterDeviceId) {
       return found;
     }
-    const requester = await this.getMemberByDeviceId(requesterDeviceId);
+    const requester = await this.getMemberByGroupAndDevice(found.member.groupId, requesterDeviceId);
     const groupMembers = await this.getMembersByGroup(found.member.groupId);
-    if (
-      !requester ||
-      requester.groupId !== found.member.groupId ||
-      !isEffectiveAdmin(requester, groupMembers)
-    ) {
+    if (!requester || !isEffectiveAdmin(requester, groupMembers)) {
       throw new AppError("FORBIDDEN", "このメンバーの状態を変更する権限がありません");
     }
     return found;
@@ -404,9 +415,9 @@ export class SheetsRepository implements Repository {
   async updateGroupNearbyLabel(groupId: string, deviceId: string, nearbyLabel: string): Promise<Group> {
     const found = await this.findGroupRow(groupId);
     if (!found) throw new AppError("NOT_FOUND", "グループが見つかりません");
-    const requester = await this.getMemberByDeviceId(deviceId);
+    const requester = await this.getMemberByGroupAndDevice(groupId, deviceId);
     const groupMembers = await this.getMembersByGroup(groupId);
-    if (!requester || requester.groupId !== groupId || !isEffectiveAdmin(requester, groupMembers)) {
+    if (!requester || !isEffectiveAdmin(requester, groupMembers)) {
       throw new AppError("FORBIDDEN", "呼び方を変更する権限がありません");
     }
     found.group.nearbyLabel = nearbyLabel.trim();
@@ -436,8 +447,8 @@ export class SheetsRepository implements Repository {
   }
 
   async refreshInviteCode(groupId: string, deviceId: string): Promise<Group> {
-    const member = await this.getMemberByDeviceId(deviceId);
-    if (!member || member.groupId !== groupId) {
+    const member = await this.getMemberByGroupAndDevice(groupId, deviceId);
+    if (!member) {
       throw new AppError("FORBIDDEN", "このグループの招待コードを再発行する権限がありません");
     }
     const found = await this.findGroupRow(groupId);
@@ -461,6 +472,44 @@ export class SheetsRepository implements Repository {
         await this.deleteRow(GROUPS_SHEET, groupsSheetId, found.rowNumber);
       }
     }
+  }
+
+  async removeMember(memberId: string, requesterDeviceId: string): Promise<void> {
+    const found = await this.findMemberRow(memberId);
+    if (!found) {
+      throw new AppError("NOT_FOUND", "メンバーが見つかりません");
+    }
+    const requester = await this.getMemberByGroupAndDevice(found.member.groupId, requesterDeviceId);
+    const groupMembers = await this.getMembersByGroup(found.member.groupId);
+    if (!requester || !isEffectiveAdmin(requester, groupMembers)) {
+      throw new AppError("FORBIDDEN", "このメンバーを削除する権限がありません");
+    }
+    if (requester.memberId === found.member.memberId) {
+      throw new AppError("VALIDATION_ERROR", "自分自身の削除はグループの退出から行ってください");
+    }
+    const membersSheetId = await this.getSheetId(MEMBERS_SHEET);
+    await this.deleteRow(MEMBERS_SHEET, membersSheetId, found.rowNumber);
+  }
+
+  async deleteGroup(groupId: string, requesterDeviceId: string): Promise<void> {
+    const foundGroup = await this.findGroupRow(groupId);
+    if (!foundGroup) {
+      throw new AppError("NOT_FOUND", "グループが見つかりません");
+    }
+    const requester = await this.getMemberByGroupAndDevice(groupId, requesterDeviceId);
+    const groupMembers = await this.getMembersByGroup(groupId);
+    if (!requester || !isEffectiveAdmin(requester, groupMembers)) {
+      throw new AppError("FORBIDDEN", "このグループを削除する権限がありません");
+    }
+    const memberRows = await this.readSheet(MEMBERS_SHEET);
+    const rowNumbers = memberRows
+      .map((r, i) => ({ row: r, rowNumber: i + 1 }))
+      .filter(({ row, rowNumber }) => rowNumber > 1 && row[1] === groupId)
+      .map(({ rowNumber }) => rowNumber);
+    const membersSheetId = await this.getSheetId(MEMBERS_SHEET);
+    await this.deleteRows(MEMBERS_SHEET, membersSheetId, rowNumbers);
+    const groupsSheetId = await this.getSheetId(GROUPS_SHEET);
+    await this.deleteRow(GROUPS_SHEET, groupsSheetId, foundGroup.rowNumber);
   }
 
   private async issueUniqueInviteCode(): Promise<string> {

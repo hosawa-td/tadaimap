@@ -78,4 +78,38 @@ describe("DELETE /members/:memberId", () => {
 
     expect(res.status).toBe(403);
   });
+
+  it("管理者は他のメンバーを削除できる", async () => {
+    const { app, groupId, memberIdB } = await setupGroupWithTwoMembers();
+
+    const res = await request(app)
+      .delete(`/members/${memberIdB}`)
+      .set("x-device-id", "dev-1");
+
+    expect(res.status).toBe(200);
+
+    const list = await request(app).get(`/groups/${groupId}/members`).set("x-device-id", "dev-1");
+    expect(list.body.members).toHaveLength(1);
+  });
+});
+
+describe("DELETE /groups/:groupId", () => {
+  it("管理者はグループを削除できる(所属メンバー全員も削除される)", async () => {
+    const { app, repository, groupId, memberIdA, memberIdB } = await setupGroupWithTwoMembers();
+
+    const res = await request(app).delete(`/groups/${groupId}`).set("x-device-id", "dev-1");
+
+    expect(res.status).toBe(200);
+    expect(await repository.getGroup(groupId)).toBeNull();
+    expect(await repository.getMemberById(memberIdA)).toBeNull();
+    expect(await repository.getMemberById(memberIdB)).toBeNull();
+  });
+
+  it("管理者以外はグループを削除できない", async () => {
+    const { app, groupId } = await setupGroupWithTwoMembers();
+
+    const res = await request(app).delete(`/groups/${groupId}`).set("x-device-id", "dev-2");
+
+    expect(res.status).toBe(403);
+  });
 });
