@@ -14,6 +14,7 @@ import JoinGroupScreen from "./src/screens/JoinGroupScreen";
 import RegisterHomeScreen from "./src/screens/RegisterHomeScreen";
 import HomeScreen from "./src/screens/HomeScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
+import PrivacyPolicyScreen from "./src/screens/PrivacyPolicyScreen";
 import { colors } from "./src/theme/tokens";
 
 export type RootStackParamList = {
@@ -22,6 +23,7 @@ export type RootStackParamList = {
   JoinGroup: undefined;
   RegisterHome: { fromSettings?: boolean } | undefined;
   Main: undefined;
+  PrivacyPolicy: undefined;
 };
 
 export type MainTabParamList = {
@@ -80,6 +82,11 @@ function RootNavigator() {
       <RootStack.Screen name="JoinGroup" component={JoinGroupScreen} />
       <RootStack.Screen name="RegisterHome" component={RegisterHomeScreen} />
       <RootStack.Screen name="Main" component={MainNavigator} />
+      <RootStack.Screen
+        name="PrivacyPolicy"
+        component={PrivacyPolicyScreen}
+        options={{ headerShown: true, title: "プライバシーポリシー" }}
+      />
     </RootStack.Navigator>
   );
 }

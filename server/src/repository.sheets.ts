@@ -289,12 +289,25 @@ export class SheetsRepository implements Repository {
     if (existing) {
       throw new AppError("ALREADY_JOINED", "この端末は既にこのグループに参加しています");
     }
+    const trimmedName = name.trim();
+    // 端末の再インストール等でdevice_idが変わってしまった場合でも、同じ名前で参加し直せば
+    // 元のメンバー(状態の履歴・管理者権限・自宅設定など)を引き継げるようにする
+    const memberRows = await this.readSheet(MEMBERS_SHEET);
+    const previousRowIndex = memberRows.findIndex(
+      (r, i) => i > 0 && r[1] === found.group.groupId && r[3] === trimmedName
+    );
+    if (previousRowIndex !== -1) {
+      const previousMember = this.rowToMember(memberRows[previousRowIndex]);
+      previousMember.deviceId = deviceId;
+      await this.updateRow(MEMBERS_SHEET, previousRowIndex + 1, this.memberToRow(previousMember));
+      return { group: found.group, member: previousMember };
+    }
     const now = new Date();
     const member: Member = {
       memberId: cryptoRandomId(),
       groupId: found.group.groupId,
       deviceId,
-      name: name.trim(),
+      name: trimmedName,
       showName: true,
       status: "away",
       statusUpdatedAt: now.toISOString(),

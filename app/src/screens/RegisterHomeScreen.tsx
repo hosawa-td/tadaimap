@@ -244,9 +244,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   map: { width: "100%", height: "100%" },
-  radiusHeaderRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: spacing.xs },
-  label: { ...typography.titleMd, color: colors.textPrimary },
-  radiusValue: { ...typography.titleMd, color: colors.accent },
+  radiusHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: spacing.xs,
+  },
+  label: { ...typography.titleMd, color: colors.textPrimary, flex: 1, marginRight: spacing.sm },
+  radiusValue: { ...typography.titleMd, color: colors.accent, flexShrink: 0 },
   radiusScaleRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: spacing.md },
   scaleText: { ...typography.bodySm, color: colors.textFaint },
   hint: {

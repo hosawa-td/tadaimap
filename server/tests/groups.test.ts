@@ -117,6 +117,48 @@ describe("POST /groups/join", () => {
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
   });
+
+  it("端末の再インストール等で別のdevice_idになっても、同じ名前で参加し直すと元のメンバーとして復帰する", async () => {
+    const { app, repository } = buildApp();
+    const groupA = await request(app).post("/groups").send({ deviceId: "dev-1", name: "さくら" });
+    const joined = await request(app)
+      .post("/groups/join")
+      .send({ deviceId: "dev-2", inviteCode: groupA.body.inviteCode, name: "たろう" });
+    const originalMemberId = joined.body.memberId;
+    await request(app)
+      .patch(`/members/${originalMemberId}/status`)
+      .send({ deviceId: "dev-2", status: "home" });
+
+    // dev-2の端末が再インストールされ、新しいdevice_id(dev-2-reinstalled)になったと仮定する
+    const rejoinRes = await request(app)
+      .post("/groups/join")
+      .send({ deviceId: "dev-2-reinstalled", inviteCode: groupA.body.inviteCode, name: "たろう" });
+
+    expect(rejoinRes.status).toBe(200);
+    expect(rejoinRes.body.memberId).toBe(originalMemberId);
+    const member = await repository.getMemberById(originalMemberId);
+    expect(member?.deviceId).toBe("dev-2-reinstalled");
+    expect(member?.status).toBe("home"); // 以前の状態も引き継がれている
+
+    const list = await request(app).get(`/groups/${groupA.body.groupId}/members`).set("x-device-id", "dev-1");
+    expect(list.body.members).toHaveLength(2); // 重複登録されていない
+  });
+
+  it("別の名前で参加した場合は、通常どおり新しいメンバーとして登録される", async () => {
+    const { app } = buildApp();
+    const groupA = await request(app).post("/groups").send({ deviceId: "dev-1", name: "さくら" });
+    await request(app)
+      .post("/groups/join")
+      .send({ deviceId: "dev-2", inviteCode: groupA.body.inviteCode, name: "たろう" });
+
+    const res = await request(app)
+      .post("/groups/join")
+      .send({ deviceId: "dev-3", inviteCode: groupA.body.inviteCode, name: "はなこ" });
+
+    expect(res.status).toBe(200);
+    const list = await request(app).get(`/groups/${groupA.body.groupId}/members`).set("x-device-id", "dev-1");
+    expect(list.body.members).toHaveLength(3);
+  });
 });
 
 describe("GET /memberships", () => {

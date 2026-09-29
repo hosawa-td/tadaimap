@@ -216,6 +216,19 @@
 
     <button class="btn btn-danger" id="leave-btn">このブラウザをグループから外す</button>
     <button class="btn btn-danger" id="delete-group-btn" hidden>グループを削除する</button>
+
+    <div class="section-title">このアプリについて</div>
+    <div class="settings-card">
+      <div class="row">
+        <a class="row-title" href="/privacy.html" style="color:var(--text);text-decoration:none;">プライバシーポリシー</a>
+        <span style="color:var(--text-faint);">›</span>
+      </div>
+      <div class="row">
+        <div class="row-title">バージョン</div>
+        <div class="row-sub" id="app-version-sub"></div>
+      </div>
+    </div>
+
     <p class="footnote">通知が有効な場合、通知を受け取ったときにこの画面も自動で更新されます。それ以外は自動更新されないため、最新の状況を見るには再読み込みしてください。</p>
   </section>
 
@@ -411,6 +424,8 @@
   var deviceId = getOrCreateDeviceId();
   backupToCookie();
   var API_BASE = window.location.origin;
+  // アプリ本体(app.config.js)のversionと合わせて手動で更新する
+  var WEB_APP_VERSION = "1.1.0";
 
   function el(id) { return document.getElementById(id); }
 
@@ -1147,6 +1162,8 @@
     settingsName.value = storageGet(STORAGE.myName) || "";
     loadHome();
   }
+
+  el("app-version-sub").textContent = WEB_APP_VERSION;
 
   // ---------- Boot ----------
   (async function boot() {

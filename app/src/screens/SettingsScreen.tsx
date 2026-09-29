@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Clipboard from "expo-clipboard";
+import Constants from "expo-constants";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../../App";
@@ -162,6 +163,8 @@ export default function SettingsScreen() {
     navigation.navigate("JoinGroup");
   };
 
+  const appVersion = Constants.expoConfig?.version ?? "-";
+
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.container}>
@@ -306,6 +309,19 @@ export default function SettingsScreen() {
             <Text style={styles.dangerButtonTextStrong}>グループを削除する</Text>
           </TouchableOpacity>
         )}
+
+        <Text style={styles.sectionTitle}>このアプリについて</Text>
+        <View style={styles.card}>
+          <TouchableOpacity style={styles.row} onPress={() => navigation.navigate("PrivacyPolicy")}>
+            <Text style={styles.rowTitle}>プライバシーポリシー</Text>
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
+          <View style={styles.divider} />
+          <View style={styles.row}>
+            <Text style={styles.rowTitle}>バージョン</Text>
+            <Text style={styles.rowSub}>{appVersion}</Text>
+          </View>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
