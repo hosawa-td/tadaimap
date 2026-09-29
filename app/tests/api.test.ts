@@ -31,6 +31,19 @@ describe("ApiClient", () => {
     );
   });
 
+  it("joinGroupは自宅位置(登録済みの場合)も受け取れる", async () => {
+    mockFetchOnce(200, {
+      groupId: "g1",
+      memberId: "m1",
+      home: { lat: 35.68, lng: 139.76, homeRadiusM: 100, buildingRadiusM: 300 },
+    });
+    const client = new ApiClient("http://api.example.com", "dev-1");
+
+    const result = await client.joinGroup("123456", "たろう");
+
+    expect(result.home).toEqual({ lat: 35.68, lng: 139.76, homeRadiusM: 100, buildingRadiusM: 300 });
+  });
+
   it("エラーレスポンスの場合はApiErrorを投げる", async () => {
     mockFetchOnce(410, { error: { code: "CODE_EXPIRED", message: "招待コードの有効期限が切れています" } });
     const client = new ApiClient("http://api.example.com", "dev-2");

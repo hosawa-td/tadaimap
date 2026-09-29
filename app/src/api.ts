@@ -11,7 +11,14 @@ export interface MemberView {
   homeDetail: string;
   isAdmin: boolean;
   /** 自宅位置・判定範囲(登録済みの場合のみ)。他メンバーには見せないため、isMeの行にしか入らない。 */
-  home: { lat: number; lng: number; homeRadiusM: number; buildingRadiusM: number } | null;
+  home: MemberHome | null;
+}
+
+export interface MemberHome {
+  lat: number;
+  lng: number;
+  homeRadiusM: number;
+  buildingRadiusM: number;
 }
 
 export interface ApiErrorBody {
@@ -39,6 +46,8 @@ export interface CreateGroupResult {
 export interface JoinGroupResult {
   groupId: string;
   memberId: string;
+  /** 同じ名前での復帰(既存メンバーへの再接続)の場合、既に登録済みの自宅位置・判定範囲。 */
+  home: MemberHome | null;
 }
 
 export interface MembersListResult {

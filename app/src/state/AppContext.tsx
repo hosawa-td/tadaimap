@@ -49,7 +49,8 @@ interface AppContextValue {
   errorMessage: string | null;
 
   createGroup: (name: string) => Promise<{ inviteCode: string }>;
-  joinGroup: (inviteCode: string, name: string) => Promise<void>;
+  /** 参加結果として、既に自宅位置が登録済みだったか(＝同じ名前での復帰)を返す。 */
+  joinGroup: (inviteCode: string, name: string) => Promise<{ hasHome: boolean }>;
   /** 参加中の別のグループに切り替える。 */
   switchGroup: (groupId: string) => Promise<void>;
   /** 参加中グループの一覧を、端末内の保存内容に頼らずDBから取り直す。 */
@@ -214,7 +215,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const joinGroup = useCallback(
     async (inviteCode2: string, name: string) => {
       if (!api) throw new Error("初期化中です");
-      await withLoading(async () => {
+      return withLoading(async () => {
         const result = await api.joinGroup(inviteCode2, name);
         const membership: Membership = {
           groupId: result.groupId,
@@ -227,6 +228,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setMyName(name);
         await addMembership(membership);
         setMemberships((prev) => [...prev.filter((m) => m.groupId !== membership.groupId), membership]);
+
+        if (result.home) {
+          // 同じ名前での復帰で、既に自宅位置が登録済みだった場合は、この端末でも
+          // バックグラウンドの自動判定をすぐ再開できるようにしておく
+          const { lat, lng, homeRadiusM: homeR, buildingRadiusM: buildingR } = result.home;
+          setHomeRadiusM(homeR);
+          setBuildingRadiusM(buildingR);
+          await saveHomeGeofenceConfig({ lat, lng, homeRadiusM: homeR, buildingRadiusM: buildingR });
+          try {
+            await startHomeGeofence(lat, lng, homeR, buildingR);
+          } catch (err) {
+            // 位置情報の権限が無い場合などは自動判定を諦め、手動更新にフォールバックする
+            // eslint-disable-next-line no-console
+            console.warn("[home] ジオフェンスの再登録に失敗しました", err);
+          }
+        }
+        return { hasHome: !!result.home };
       });
     },
     [api, withLoading]

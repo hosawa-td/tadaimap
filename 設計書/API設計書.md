@@ -19,11 +19,12 @@ APIサーバーが提供するエンドポイント一覧。すべてスプレ�
 ### 2. `POST /groups/join` — 招待コードでの参加（F2・F18）
 
 - リクエスト：`{ "device_id": string, "invite_code": string, "name": string }`
-- レスポンス：`{ "group_id": string, "member_id": string }`
+- レスポンス：`{ "group_id": string, "member_id": string, "home": { "lat", "lng", "homeRadiusM", "buildingRadiusM" } | null }`
 - エラー：招待コードが存在しない／期限切れ → `404 CODE_NOT_FOUND` または `410 CODE_EXPIRED`。**同じグループ**に既に参加済みの`device_id` → `409 ALREADY_JOINED`（別のグループへの参加は妨げない。1台の端末が複数グループに参加できるため）
 - 処理：`Groups`から該当コードを検索し、有効期限内であれば以下のいずれかを行う。
   1. 同じグループ内に`name`（前後の空白を除いたもの）が完全一致する既存メンバーがいる場合：その行の`device_id`のみを今回の値に更新し、同じ`member_id`を返す（＝端末の再インストール等で復帰）。
   2. 一致するメンバーが居ない場合：`Members`に新規行を追加する。
+- `home`は、上記1（復帰）でかつ自宅位置・判定範囲が登録済みの場合のみ値を持つ。アプリ版はこれを使って自宅の登録画面を省略する（F2・F3を参照）。
 
 ### 3. `GET /groups/:groupId/members` — メンバー一覧取得（F5）
 

@@ -36,8 +36,13 @@ export default function JoinGroupScreen({ navigation }: Props) {
 
   const handleJoin = async () => {
     try {
-      await joinGroup(code, name);
-      navigation.navigate("RegisterHome", { fromSettings: false });
+      const { hasHome } = await joinGroup(code, name);
+      if (hasHome) {
+        // 同じ名前での復帰で、既に自宅位置が登録済みの場合は、登録画面を挟まずホーム画面へ進む
+        navigation.reset({ index: 0, routes: [{ name: "Main" }] });
+      } else {
+        navigation.navigate("RegisterHome", { fromSettings: false });
+      }
     } catch (err) {
       const message =
         err instanceof ApiError ? ERROR_MESSAGES[err.code] ?? err.message : "参加に失敗しました";

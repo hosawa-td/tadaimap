@@ -144,6 +144,25 @@ describe("POST /groups/join", () => {
     expect(list.body.members).toHaveLength(2); // 重複登録されていない
   });
 
+  it("参加のレスポンスに自宅位置を含む(復帰時は既存の値、新規時はnull)", async () => {
+    const { app } = buildApp();
+    const groupA = await request(app).post("/groups").send({ deviceId: "dev-1", name: "さくら" });
+    const joined = await request(app)
+      .post("/groups/join")
+      .send({ deviceId: "dev-2", inviteCode: groupA.body.inviteCode, name: "たろう" });
+    expect(joined.body.home).toBeNull();
+
+    await request(app)
+      .patch(`/members/${joined.body.memberId}/home`)
+      .send({ deviceId: "dev-2", homeLat: 35.68, homeLng: 139.76, homeRadiusM: 100, buildingRadiusM: 300 });
+
+    const rejoinRes = await request(app)
+      .post("/groups/join")
+      .send({ deviceId: "dev-2-reinstalled", inviteCode: groupA.body.inviteCode, name: "たろう" });
+
+    expect(rejoinRes.body.home).toEqual({ lat: 35.68, lng: 139.76, homeRadiusM: 100, buildingRadiusM: 300 });
+  });
+
   it("別の名前で参加した場合は、通常どおり新しいメンバーとして登録される", async () => {
     const { app } = buildApp();
     const groupA = await request(app).post("/groups").send({ deviceId: "dev-1", name: "さくら" });

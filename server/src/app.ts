@@ -31,6 +31,26 @@ function getDeviceId(req: Request): string | undefined {
   return fromBody ?? fromHeader ?? undefined;
 }
 
+/** 自宅位置・判定範囲がすべて登録済みの場合のみ、その内容を返す。 */
+function memberHomeInfo(
+  member: Member
+): { lat: number; lng: number; homeRadiusM: number; buildingRadiusM: number } | null {
+  if (
+    member.homeLat === null ||
+    member.homeLng === null ||
+    member.homeRadiusM === null ||
+    member.buildingRadiusM === null
+  ) {
+    return null;
+  }
+  return {
+    lat: member.homeLat,
+    lng: member.homeLng,
+    homeRadiusM: member.homeRadiusM,
+    buildingRadiusM: member.buildingRadiusM,
+  };
+}
+
 function toMemberView(
   member: Member,
   requesterDeviceId: string | undefined,
@@ -39,11 +59,6 @@ function toMemberView(
 ): MemberView {
   const isMe = member.deviceId === requesterDeviceId;
   const nameOrAnonymous = isMe || member.showName ? member.name : "メンバー";
-  const hasHome =
-    member.homeLat !== null &&
-    member.homeLng !== null &&
-    member.homeRadiusM !== null &&
-    member.buildingRadiusM !== null;
   return {
     memberId: member.memberId,
     nameOrAnonymous,
@@ -53,15 +68,7 @@ function toMemberView(
     nearbyLabel: groupNearbyLabel,
     homeDetail: member.homeDetail,
     isAdmin: isEffectiveAdmin(member, groupMembers),
-    home:
-      isMe && hasHome
-        ? {
-            lat: member.homeLat as number,
-            lng: member.homeLng as number,
-            homeRadiusM: member.homeRadiusM as number,
-            buildingRadiusM: member.buildingRadiusM as number,
-          }
-        : null,
+    home: isMe ? memberHomeInfo(member) : null,
   };
 }
 
@@ -122,7 +129,13 @@ export function createApp(
         throw new AppError("VALIDATION_ERROR", "名前は1〜12文字で入力してください");
       }
       const { group, member } = await repository.joinGroup(deviceId, inviteCode, name);
-      res.status(200).json({ groupId: group.groupId, memberId: member.memberId });
+      // 同じ名前での復帰(F2)の場合、既に自宅位置が登録済みのことがある。
+      // アプリ側が「自宅の登録画面」を再度案内せずホーム画面へ直行できるように、その内容を返す。
+      res.status(200).json({
+        groupId: group.groupId,
+        memberId: member.memberId,
+        home: memberHomeInfo(member),
+      });
     })
   );
 
