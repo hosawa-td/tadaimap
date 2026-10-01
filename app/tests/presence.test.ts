@@ -15,6 +15,7 @@ function member(overrides: Partial<MemberView>): MemberView {
     isMe: false,
     status: "home",
     statusUpdatedAt: "2026-01-01T05:32:00.000Z",
+    statusSetByAdmin: false,
     nearbyLabel: "施設内",
     homeDetail: "",
     isAdmin: false,
@@ -55,6 +56,14 @@ describe("formatStatusLine", () => {
     const iso = new Date(2026, 0, 1, 12, 0).toISOString();
     const line = formatStatusLine(member({ status: "nearby", nearbyLabel: "ロビー", statusUpdatedAt: iso }));
     expect(line).toBe("ロビー · 12:00から");
+  });
+
+  it("管理者による強制変更の場合は、時刻を表示しない", () => {
+    const iso = new Date(2026, 0, 1, 15, 3).toISOString();
+    const line = formatStatusLine(
+      member({ status: "home", statusUpdatedAt: iso, statusSetByAdmin: true })
+    );
+    expect(line).toBe("在宅");
   });
 });
 

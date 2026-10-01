@@ -17,6 +17,8 @@ export interface Member {
   showName: boolean;
   status: PresenceStatus;
   statusUpdatedAt: string; // ISO8601
+  /** 直近のstatus変更が、本人ではなく管理者による強制変更だったか。trueの場合、通知を送らず、statusUpdatedAtも更新しない(見た目上は時刻を表示しない扱いとする)。 */
+  statusSetByAdmin: boolean;
   /** 在宅中の詳細な状態(例:「トイレ中」「入浴中」)。本人が自由に設定できる。状態が変わるたびに空に戻る。 */
   homeDetail: string;
   homeLat: number | null;
@@ -40,6 +42,8 @@ export interface MemberView {
   isMe: boolean;
   status: PresenceStatus;
   statusUpdatedAt: string;
+  /** 直近のstatus変更が管理者による強制変更だったか。trueの場合、画面は時刻("18:32に帰宅"等)を表示しない。 */
+  statusSetByAdmin: boolean;
   /** status が "nearby" の場合に表示すべきラベル(グループ共通・管理者が設定した呼び方)。 */
   nearbyLabel: string;
   /** status が "home" の場合に、本人が任意で設定した詳細な状態(例:「トイレ中」)。 */

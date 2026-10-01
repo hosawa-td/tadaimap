@@ -14,6 +14,8 @@ export function statusLabel(member: MemberView): string {
 }
 
 export function formatStatusLine(member: MemberView): string {
+  // 管理者が代わりに変更した場合は、本人が実際に帰宅・外出した時刻ではないため表示しない
+  if (member.statusSetByAdmin) return statusLabel(member);
   const time = formatTime(member.statusUpdatedAt);
   if (member.status === "home") return `在宅 · ${time}に帰宅`;
   if (member.status === "nearby") return `${member.nearbyLabel} · ${time}から`;

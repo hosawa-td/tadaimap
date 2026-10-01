@@ -45,6 +45,8 @@ const MEMBERS_COLUMNS = [
   "web_push_subscription",
   // 在宅中の詳細な状態(トイレ中など)機能で追加(既存の行との互換性のため末尾に追加)
   "home_detail",
+  // 管理者による状態の強制変更を区別する機能で追加(既存の行との互換性のため末尾に追加)
+  "status_set_by_admin",
 ] as const;
 
 /**
@@ -189,6 +191,7 @@ export class SheetsRepository implements Repository {
       isAdmin: toBool(row[15]),
       webPushSubscription: row[16] || null,
       homeDetail: row[17] || "",
+      statusSetByAdmin: toBool(row[18]),
     };
   }
 
@@ -212,6 +215,7 @@ export class SheetsRepository implements Repository {
       m.isAdmin,
       m.webPushSubscription ?? "",
       m.homeDetail,
+      m.statusSetByAdmin,
     ];
   }
 
@@ -262,6 +266,7 @@ export class SheetsRepository implements Repository {
       showName: true,
       status: "away",
       statusUpdatedAt: now.toISOString(),
+      statusSetByAdmin: false,
       homeDetail: "",
       homeLat: null,
       homeLng: null,
@@ -311,6 +316,7 @@ export class SheetsRepository implements Repository {
       showName: true,
       status: "away",
       statusUpdatedAt: now.toISOString(),
+      statusSetByAdmin: false,
       homeDetail: "",
       homeLat: null,
       homeLng: null,
@@ -379,9 +385,13 @@ export class SheetsRepository implements Repository {
   }
 
   async updateStatus(memberId: string, deviceId: string, status: PresenceStatus) {
-    const { rowNumber, member } = await this.requireStatusPermissionRow(memberId, deviceId);
+    const { rowNumber, member, isAdminChange } = await this.requireStatusPermissionRow(memberId, deviceId);
     member.status = status;
-    member.statusUpdatedAt = new Date().toISOString();
+    member.statusSetByAdmin = isAdminChange;
+    // 管理者による強制変更は、本人が実際に帰宅・外出したタイミングではないため、時刻は更新しない
+    if (!isAdminChange) {
+      member.statusUpdatedAt = new Date().toISOString();
+    }
     member.homeDetail = "";
     await this.updateRow(MEMBERS_SHEET, rowNumber, this.memberToRow(member));
     return member;
@@ -402,14 +412,14 @@ export class SheetsRepository implements Repository {
     const found = await this.findMemberRow(memberId);
     if (!found) throw new AppError("NOT_FOUND", "メンバーが見つかりません");
     if (found.member.deviceId === requesterDeviceId) {
-      return found;
+      return { ...found, isAdminChange: false };
     }
     const requester = await this.getMemberByGroupAndDevice(found.member.groupId, requesterDeviceId);
     const groupMembers = await this.getMembersByGroup(found.member.groupId);
     if (!requester || !isEffectiveAdmin(requester, groupMembers)) {
       throw new AppError("FORBIDDEN", "このメンバーの状態を変更する権限がありません");
     }
-    return found;
+    return { ...found, isAdminChange: true };
   }
 
   async updateProfile(

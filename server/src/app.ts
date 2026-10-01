@@ -65,6 +65,7 @@ function toMemberView(
     isMe,
     status: member.status,
     statusUpdatedAt: member.statusUpdatedAt,
+    statusSetByAdmin: member.statusSetByAdmin,
     nearbyLabel: groupNearbyLabel,
     homeDetail: member.homeDetail,
     isAdmin: isEffectiveAdmin(member, groupMembers),
@@ -227,19 +228,22 @@ export function createApp(
         );
       }
       const member = await repository.updateStatus(memberId, deviceId, status as PresenceStatus);
-      // 通知の送信に失敗しても、既に保存済みの状態更新自体は成功として返す
-      try {
-        const group = await repository.getGroup(member.groupId);
-        await notifyGroupOfStatusChange(
-          repository,
-          pushSender,
-          webPushSender,
-          member,
-          group?.nearbyLabel ?? NEARBY_LABEL_DEFAULT
-        );
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error("[notify] 状態変更の通知送信に失敗しました", err);
+      // 管理者による強制変更の場合は、本人の意思による変化ではないため通知しない
+      if (!member.statusSetByAdmin) {
+        // 通知の送信に失敗しても、既に保存済みの状態更新自体は成功として返す
+        try {
+          const group = await repository.getGroup(member.groupId);
+          await notifyGroupOfStatusChange(
+            repository,
+            pushSender,
+            webPushSender,
+            member,
+            group?.nearbyLabel ?? NEARBY_LABEL_DEFAULT
+          );
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error("[notify] 状態変更の通知送信に失敗しました", err);
+        }
       }
       res.status(200).json({ ok: true });
     })

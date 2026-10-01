@@ -34,6 +34,7 @@ export class MemoryRepository implements Repository {
       showName: true,
       status: "away",
       statusUpdatedAt: now.toISOString(),
+      statusSetByAdmin: false,
       homeDetail: "",
       homeLat: null,
       homeLng: null,
@@ -86,6 +87,7 @@ export class MemoryRepository implements Repository {
       showName: true,
       status: "away",
       statusUpdatedAt: now.toISOString(),
+      statusSetByAdmin: false,
       homeDetail: "",
       homeLat: null,
       homeLng: null,
@@ -146,9 +148,13 @@ export class MemoryRepository implements Repository {
     deviceId: string,
     status: PresenceStatus
   ): Promise<Member> {
-    const member = await this.requireStatusPermission(memberId, deviceId);
+    const { member, isAdminChange } = await this.requireStatusPermission(memberId, deviceId);
     member.status = status;
-    member.statusUpdatedAt = new Date().toISOString();
+    member.statusSetByAdmin = isAdminChange;
+    // 管理者による強制変更は、本人が実際に帰宅・外出したタイミングではないため、時刻は更新しない
+    if (!isAdminChange) {
+      member.statusUpdatedAt = new Date().toISOString();
+    }
     member.homeDetail = "";
     return member;
   }
@@ -286,20 +292,23 @@ export class MemoryRepository implements Repository {
    * 状態(status)は本人に加えて、同じグループの管理者からも変更できる
    * (「管理者は参加者の状態設定を手動で変更もできる」という要件のため)。
    */
-  private async requireStatusPermission(memberId: string, requesterDeviceId: string): Promise<Member> {
+  private async requireStatusPermission(
+    memberId: string,
+    requesterDeviceId: string
+  ): Promise<{ member: Member; isAdminChange: boolean }> {
     const member = this.members.get(memberId);
     if (!member) {
       throw new AppError("NOT_FOUND", "メンバーが見つかりません");
     }
     if (member.deviceId === requesterDeviceId) {
-      return member;
+      return { member, isAdminChange: false };
     }
     const requester = await this.getMemberByGroupAndDevice(member.groupId, requesterDeviceId);
     const groupMembers = await this.getMembersByGroup(member.groupId);
     if (!requester || !isEffectiveAdmin(requester, groupMembers)) {
       throw new AppError("FORBIDDEN", "このメンバーの状態を変更する権限がありません");
     }
-    return member;
+    return { member, isAdminChange: true };
   }
 
   private issueUniqueInviteCode(): string {

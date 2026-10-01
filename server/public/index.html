@@ -508,6 +508,8 @@
   }
 
   function statusLine(m) {
+    // 管理者が代わりに変更した場合は、本人が実際に帰宅・外出した時刻ではないため表示しない
+    if (m.statusSetByAdmin) return statusLabel(m);
     if (m.status === "home") return "在宅 · " + formatTime(m.statusUpdatedAt) + "に帰宅";
     if (m.status === "nearby") return m.nearbyLabel + " · " + formatTime(m.statusUpdatedAt) + "から";
     return "外出中 · " + formatTime(m.statusUpdatedAt) + "に外出";

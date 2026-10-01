@@ -44,7 +44,10 @@ APIサーバーが提供するエンドポイント一覧。すべてスプレ�
 - リクエスト：`{ "device_id": string, "status": "home" | "nearby" | "away", "source": "auto" | "manual" }`
 - レスポンス：`{ "ok": true }`
 - 権限：`device_id`が対象メンバー本人のものでなくても、同じグループの管理者（F12）であれば実行できる（それ以外は`403 FORBIDDEN`）
-- 処理：`status`・`status_updated_at`を更新し、`home_detail`（F16）を空にリセットする。更新後、同グループの他メンバーのうち`notify_enabled=TRUE`の端末へ、ネイティブアプリには`push_token`を用いてExpo Push Notification Service経由、Web版には`web_push_subscription`を用いてWeb Push（VAPID）経由で、それぞれ独立に通知を送信する。通知の送信に失敗しても、本エンドポイントのレスポンスは`200 OK`のまま返す（状態更新自体は成立しているため）。
+- 処理：`status`を更新し、`home_detail`（F16）を空にリセットする。
+  - `device_id`が本人のものである場合（通常の変更）：`status_updated_at`を現在時刻に更新し、`status_set_by_admin`を`FALSE`にする。更新後、同グループの他メンバーのうち`notify_enabled=TRUE`の端末へ、ネイティブアプリには`push_token`を用いてExpo Push Notification Service経由、Web版には`web_push_subscription`を用いてWeb Push（VAPID）経由で、それぞれ独立に通知を送信する。通知の送信に失敗しても、本エンドポイントのレスポンスは`200 OK`のまま返す（状態更新自体は成立しているため）。
+  - `device_id`が管理者自身のもので、対象が別メンバーである場合（代理変更）：`status_updated_at`は更新せず（本人が実際に帰宅・外出した時刻ではないため）、`status_set_by_admin`を`TRUE`にする。この場合、通知は一切送信しない（本人の意思によらない変更のため）。
+- `GET /groups/:groupId/members`のレスポンスに含まれる`statusSetByAdmin`が`true`の間は、アプリ・Web版とも一覧上で帰宅・外出時刻を表示しない（F12を参照）。本人が改めて自分で状態を変更すると`status_set_by_admin`は`FALSE`に戻り、通常どおり時刻が表示されるようになる。
 
 ### 6. `PATCH /members/:memberId/profile` — 名前・表示設定の変更（F7）
 

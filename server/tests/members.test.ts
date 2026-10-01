@@ -220,6 +220,55 @@ describe("PATCH /members/:memberId/status", () => {
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe("FORBIDDEN");
   });
+
+  it("管理者が代わりに変更した場合は、本人に通知が送られない", async () => {
+    const { app, push, memberIdA, memberIdB } = await setupGroupWithTwoMembers();
+
+    await request(app)
+      .patch(`/members/${memberIdB}/push-token`)
+      .send({ deviceId: "dev-2", pushToken: "ExponentPushToken[member-b]" });
+
+    const res = await request(app)
+      .patch(`/members/${memberIdB}/status`)
+      .send({ deviceId: "dev-1", status: "home" });
+
+    expect(res.status).toBe(200);
+    expect(push.sent).toHaveLength(0);
+  });
+
+  it("管理者が代わりに変更した場合は、statusSetByAdminがtrueになり時刻(statusUpdatedAt)は更新されない", async () => {
+    const { app, groupId, memberIdA, memberIdB } = await setupGroupWithTwoMembers();
+
+    const before = await request(app)
+      .get(`/groups/${groupId}/members`)
+      .set("x-device-id", "dev-1");
+    const beforeUpdatedAt = before.body.members.find((m: any) => m.memberId === memberIdB).statusUpdatedAt;
+
+    await request(app)
+      .patch(`/members/${memberIdB}/status`)
+      .send({ deviceId: "dev-1", status: "home" });
+
+    const after = await request(app)
+      .get(`/groups/${groupId}/members`)
+      .set("x-device-id", "dev-1");
+    const memberB = after.body.members.find((m: any) => m.memberId === memberIdB);
+    expect(memberB.statusSetByAdmin).toBe(true);
+    expect(memberB.statusUpdatedAt).toBe(beforeUpdatedAt);
+  });
+
+  it("本人による変更は、従来どおり通知され、statusSetByAdminはfalseのままになる", async () => {
+    const { app, groupId, memberIdA } = await setupGroupWithTwoMembers();
+
+    await request(app)
+      .patch(`/members/${memberIdA}/status`)
+      .send({ deviceId: "dev-1", status: "home" });
+
+    const list = await request(app)
+      .get(`/groups/${groupId}/members`)
+      .set("x-device-id", "dev-1");
+    const memberA = list.body.members.find((m: any) => m.memberId === memberIdA);
+    expect(memberA.statusSetByAdmin).toBe(false);
+  });
 });
 
 describe("PATCH /members/:memberId/profile", () => {

@@ -6,6 +6,8 @@ export interface MemberView {
   isMe: boolean;
   status: PresenceStatus;
   statusUpdatedAt: string;
+  /** 直近のstatus変更が管理者による強制変更だったか。trueの場合は時刻("18:32に帰宅"等)を表示しない。 */
+  statusSetByAdmin: boolean;
   nearbyLabel: string;
   /** status が "home" の場合に、本人が任意で設定した詳細な状態(例:「トイレ中」)。 */
   homeDetail: string;
