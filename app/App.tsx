@@ -1,5 +1,4 @@
-import React from "react";
-import { View } from "react-native";
+import React, { useEffect, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { NavigationContainer } from "@react-navigation/native";
@@ -15,6 +14,7 @@ import RegisterHomeScreen from "./src/screens/RegisterHomeScreen";
 import HomeScreen from "./src/screens/HomeScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import PrivacyPolicyScreen from "./src/screens/PrivacyPolicyScreen";
+import LaunchScreen from "./src/screens/LaunchScreen";
 import { colors } from "./src/theme/tokens";
 
 export type RootStackParamList = {
@@ -67,10 +67,17 @@ function MainNavigator() {
   );
 }
 
+const LAUNCH_SCREEN_MIN_MS = 1800;
+
 function RootNavigator() {
   const { ready, hasGroup } = useApp();
-  if (!ready) {
-    return <View style={{ flex: 1, backgroundColor: colors.background }} />;
+  const [minElapsed, setMinElapsed] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setMinElapsed(true), LAUNCH_SCREEN_MIN_MS);
+    return () => clearTimeout(timer);
+  }, []);
+  if (!ready || !minElapsed) {
+    return <LaunchScreen />;
   }
   return (
     <RootStack.Navigator
