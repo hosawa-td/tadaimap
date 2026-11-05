@@ -14,6 +14,7 @@ export const STORAGE_KEYS = {
   nearbyLabel: "tadaimap.nearbyLabel",
   homeLat: "tadaimap.homeLat",
   homeLng: "tadaimap.homeLng",
+  homeWifiSsid: "tadaimap.homeWifiSsid",
 } as const;
 
 /** 1台の端末が複数の家族グループに参加できるように、参加中のグループを配列で保持する。 */
@@ -201,6 +202,22 @@ export async function loadHomeGeofenceConfig(): Promise<{
   return { lat, lng, homeRadiusM, buildingRadiusM };
 }
 
+/**
+ * 自宅のWi-Fi名(F24)。家族に見せる必要の無い情報のため、サーバーには送らず端末内にのみ保存する。
+ * バックグラウンドのタスク(location.ts)からも参照する。
+ */
+export async function saveHomeWifiSsid(ssid: string | null): Promise<void> {
+  if (ssid) {
+    await AsyncStorage.setItem(STORAGE_KEYS.homeWifiSsid, ssid);
+  } else {
+    await AsyncStorage.removeItem(STORAGE_KEYS.homeWifiSsid);
+  }
+}
+
+export async function loadHomeWifiSsid(): Promise<string | null> {
+  return AsyncStorage.getItem(STORAGE_KEYS.homeWifiSsid);
+}
+
 function memberOrderKey(groupId: string): string {
   return `tadaimap.memberOrder.${groupId}`;
 }
@@ -239,5 +256,6 @@ export async function clearAllMemberships(): Promise<void> {
     STORAGE_KEYS.nearbyLabel,
     STORAGE_KEYS.homeLat,
     STORAGE_KEYS.homeLng,
+    STORAGE_KEYS.homeWifiSsid,
   ]);
 }

@@ -13,6 +13,7 @@ import {
   addMembership,
   clearAllMemberships,
   loadHomeGeofenceConfig,
+  loadHomeWifiSsid,
   loadMemberships,
   Membership,
   removeMembership,
@@ -24,7 +25,13 @@ import {
 } from "../storage";
 import { BUILDING_RADIUS_DEFAULT, NEARBY_LABEL_DEFAULT, RADIUS_DEFAULT } from "../validation";
 import { registerForPushNotifications, subscribeToNotifications } from "../notifications";
-import { startHomeGeofence, stopHomeGeofence } from "../location";
+import {
+  clearHomeWifi,
+  isHomeWifiSupported,
+  registerHomeWifi,
+  startHomeGeofence,
+  stopHomeGeofence,
+} from "../location";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
 
@@ -40,6 +47,10 @@ interface AppContextValue {
   homeRadiusM: number;
   buildingRadiusM: number;
   nearbyLabel: string;
+  /** 自宅Wi-Fi(F24)として登録したWi-Fi名。未登録ならnull。 */
+  homeWifiSsid: string | null;
+  /** この端末で自宅Wi-Fiの判定が使えるか(Android版のみ)。 */
+  homeWifiSupported: boolean;
   amIAdmin: boolean;
   inviteCode: string | null;
   members: MemberView[];
@@ -57,6 +68,9 @@ interface AppContextValue {
   refreshMyGroups: () => Promise<void>;
   refreshMembers: (targetGroupId?: string) => Promise<void>;
   saveHome: (lat: number, lng: number, homeRadiusM: number, buildingRadiusM: number) => Promise<void>;
+  /** いま接続中のWi-Fiを自宅Wi-Fiとして登録する。登録できない理由はErrorのmessageで返す。 */
+  saveHomeWifi: () => Promise<void>;
+  removeHomeWifi: () => Promise<void>;
   setStatus: (status: PresenceStatus, source: "auto" | "manual") => Promise<void>;
   setMemberStatus: (targetMemberId: string, status: PresenceStatus) => Promise<void>;
   saveProfile: (fields: { name?: string; showName?: boolean }) => Promise<void>;
@@ -84,6 +98,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [homeRadiusM, setHomeRadiusM] = useState(RADIUS_DEFAULT);
   const [buildingRadiusM, setBuildingRadiusM] = useState(BUILDING_RADIUS_DEFAULT);
   const [nearbyLabel, setNearbyLabelState] = useState(NEARBY_LABEL_DEFAULT);
+  const [homeWifiSsid, setHomeWifiSsid] = useState<string | null>(null);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [members, setMembers] = useState<MemberView[]>([]);
   const [memberships, setMemberships] = useState<Membership[]>([]);
@@ -145,6 +160,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setHomeRadiusM(geofenceConfig.homeRadiusM);
         setBuildingRadiusM(geofenceConfig.buildingRadiusM);
       }
+      setHomeWifiSsid(await loadHomeWifiSsid());
       try {
         await syncMembershipsWithServer(new ApiClient(API_BASE_URL, id));
       } catch {
@@ -292,6 +308,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [api, memberId, withLoading]
   );
 
+  const saveHomeWifi = useCallback(async () => {
+    await withLoading(async () => {
+      const ssid = await registerHomeWifi();
+      setHomeWifiSsid(ssid);
+      // 登録と同時に自動判定が走り、自分のステータスが変わることがあるため一覧も取り直す
+      await refreshMembers();
+    });
+  }, [withLoading, refreshMembers]);
+
+  const removeHomeWifi = useCallback(async () => {
+    await withLoading(async () => {
+      await clearHomeWifi();
+      setHomeWifiSsid(null);
+    });
+  }, [withLoading]);
+
   const setStatus = useCallback(
     async (status: PresenceStatus, source: "auto" | "manual") => {
       if (!api || !memberId) return;
@@ -424,6 +456,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await refreshMembers(next.groupId);
     } else {
       await clearAllMemberships();
+      setHomeWifiSsid(null);
       setGroupId(null);
       setMemberId(null);
       setMyName("");
@@ -473,6 +506,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     homeRadiusM,
     buildingRadiusM,
     nearbyLabel,
+    homeWifiSsid,
+    homeWifiSupported: isHomeWifiSupported(),
     amIAdmin,
     inviteCode,
     members,
@@ -485,6 +520,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     refreshMyGroups,
     refreshMembers,
     saveHome,
+    saveHomeWifi,
+    removeHomeWifi,
     setStatus,
     setMemberStatus,
     saveProfile,

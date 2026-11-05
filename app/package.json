@@ -18,6 +18,7 @@
     "@react-navigation/native-stack": "6.11.0",
     "expo": "~57.0.24",
     "expo-application": "~57.0.3",
+    "expo-background-task": "~57.0.21",
     "expo-clipboard": "~57.0.2",
     "expo-constants": "~57.0.19",
     "expo-dev-client": "~57.0.19",

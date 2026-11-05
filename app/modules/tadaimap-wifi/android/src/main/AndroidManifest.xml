@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- 接続中のWi-Fi名(SSID)を読むため。SSIDの取得には別途、位置情報の権限(バックグラウンドでは「常に許可」)が必要 -->
+  <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+  <!-- Wi-Fiへの接続をOSに見張ってもらうため -->
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+</manifest>

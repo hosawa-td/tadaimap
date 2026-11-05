@@ -28,12 +28,16 @@ export default function SettingsScreen() {
     homeRadiusM,
     buildingRadiusM,
     nearbyLabel,
+    homeWifiSsid,
+    homeWifiSupported,
     amIAdmin,
     inviteCode,
     groupId,
     memberships,
     saveProfile,
     saveNearbyLabel,
+    saveHomeWifi,
+    removeHomeWifi,
     setNotifyEnabled,
     refreshInviteCode,
     switchGroup,
@@ -92,6 +96,27 @@ export default function SettingsScreen() {
     } catch {
       Alert.alert("エラー", "通知設定の変更に失敗しました");
     }
+  };
+
+  const handleRegisterHomeWifi = async () => {
+    try {
+      await saveHomeWifi();
+    } catch (err) {
+      Alert.alert("登録できませんでした", err instanceof Error ? err.message : "自宅のWi-Fiを登録できませんでした");
+    }
+  };
+
+  const handleRemoveHomeWifi = () => {
+    Alert.alert("自宅のWi-Fiの登録を解除しますか？", "解除後は、これまでどおり自宅からの距離だけで判定します。", [
+      { text: "キャンセル", style: "cancel" },
+      {
+        text: "解除する",
+        style: "destructive",
+        onPress: () => {
+          removeHomeWifi().catch(() => Alert.alert("エラー", "登録の解除に失敗しました"));
+        },
+      },
+    ]);
   };
 
   const handleCopyCode = async () => {
@@ -236,6 +261,29 @@ export default function SettingsScreen() {
             <Text style={styles.chevron}>›</Text>
           </View>
         </TouchableOpacity>
+        {homeWifiSupported && (
+          <View style={[styles.card, styles.cardSpaced]}>
+            <View style={styles.row}>
+              <View style={styles.rowTextBlock}>
+                <Text style={styles.rowTitle}>自宅のWi-Fi</Text>
+                <Text style={styles.rowSub}>
+                  {homeWifiSsid
+                    ? `登録済み：${homeWifiSsid}
+つながっている間は「在宅」、自宅の近くでもつながっていないときは「${nearbyLabel}」と表示します`
+                    : "登録すると、マンションの自分の部屋にいるか、ロビーなど建物内の別の場所にいるかを見分けます。自宅のWi-Fiにつないだ状態で登録してください"}
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.smallButton} onPress={handleRegisterHomeWifi}>
+                <Text style={styles.smallButtonText}>{homeWifiSsid ? "変更" : "登録"}</Text>
+              </TouchableOpacity>
+            </View>
+            {homeWifiSsid && (
+              <TouchableOpacity onPress={handleRemoveHomeWifi}>
+                <Text style={styles.linkText}>登録を解除する</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         <Text style={styles.sectionTitle}>通知</Text>
         <View style={styles.card}>
@@ -339,6 +387,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md },
+  cardSpaced: { marginTop: spacing.sm },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
   rowTextBlock: { flex: 1 },
   rowTitle: { ...typography.titleMd, color: colors.textPrimary },

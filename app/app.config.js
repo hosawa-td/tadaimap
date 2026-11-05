@@ -2,7 +2,7 @@ module.exports = {
   expo: {
     name: "タダイマップ",
     slug: "tadaimap",
-    version: "1.3.0",
+    version: "1.4.0",
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "automatic",
@@ -27,7 +27,7 @@ module.exports = {
     },
     android: {
       package: "com.tadaimap.app",
-      versionCode: 5,
+      versionCode: 6,
       adaptiveIcon: {
         foregroundImage: "./assets/adaptive-icon.png",
         backgroundColor: "#FDF8F0",
@@ -43,9 +43,15 @@ module.exports = {
         "ACCESS_FINE_LOCATION",
         "ACCESS_BACKGROUND_LOCATION",
         "FOREGROUND_SERVICE",
+        // 自宅Wi-Fiでの在宅判定(F24)のため
+        "ACCESS_WIFI_STATE",
+        "ACCESS_NETWORK_STATE",
+        // 端末の再起動後に、アプリを開かなくてもジオフェンス・Wi-Fiの見張りを再開するため
+        "RECEIVE_BOOT_COMPLETED",
       ],
     },
     plugins: [
+      "expo-background-task",
       [
         "expo-location",
         {
