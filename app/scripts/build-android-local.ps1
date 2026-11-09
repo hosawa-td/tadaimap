@@ -61,3 +61,15 @@ New-Item -ItemType Directory -Force $outDir | Out-Null
 $apk = Join-Path $outDir "tadaimap-$version-local.apk"
 Copy-Item "app\build\outputs\apk\release\app-release.apk" $apk -Force
 Write-Host "完了: $apk"
+
+# Google Drive(パソコン版)のマイドライブへ、常に同じファイル名で上書き保存する
+# (スマホからすぐ入れられるように。ファイルが増えないよう、バージョンは名前に付けない)
+$driveDir = "G:\マイドライブ"
+$driveApk = Join-Path $driveDir "tadaimap.apk"
+if (Test-Path $driveDir) {
+  Copy-Item $apk $driveApk -Force
+  if ((Get-FileHash $apk).Hash -ne (Get-FileHash $driveApk).Hash) { throw "Google Driveへのコピー内容が一致しません" }
+  Write-Host "Google Driveへ上書き保存: $driveApk"
+} else {
+  Write-Warning "Google Drive($driveDir)が見つからないため、Driveへの保存をスキップしました(Google Driveパソコン版にログインしているか確認してください)"
+}
