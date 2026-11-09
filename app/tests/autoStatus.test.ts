@@ -1,4 +1,10 @@
-import { classifyWifi, distanceMeters, judgeAutoStatus } from "../src/autoStatus";
+import {
+  classifyWifi,
+  distanceMeters,
+  judgeAutoStatus,
+  judgeFromGeofenceEvent,
+  shouldSendStatus,
+} from "../src/autoStatus";
 
 const config = { homeRadiusM: 100, buildingRadiusM: 300 };
 
@@ -85,5 +91,49 @@ describe("judgeAutoStatus", () => {
     it("自宅Wi-Fiに接続しておらず、現在地も取れなければ判定しない(null)", () => {
       expect(judgeAutoStatus({ ...config, distanceM: null, wifi: "other" })).toBeNull();
     });
+  });
+});
+
+describe("judgeFromGeofenceEvent(現在地が取れなかったときの、範囲の出入りからの判定)", () => {
+  it("自宅の範囲に入った → 在宅", () => {
+    expect(judgeFromGeofenceEvent({ regionId: "home", type: "enter" }, "none")).toBe("home");
+  });
+
+  it("自宅の範囲に入ったが、登録済みの自宅Wi-Fiにつながっていない → 施設内", () => {
+    expect(judgeFromGeofenceEvent({ regionId: "home", type: "enter" }, "other")).toBe("nearby");
+  });
+
+  it("自宅の範囲から出た → 施設内", () => {
+    expect(judgeFromGeofenceEvent({ regionId: "home", type: "exit" }, "none")).toBe("nearby");
+  });
+
+  it("建物の範囲に入った → 施設内", () => {
+    expect(judgeFromGeofenceEvent({ regionId: "building", type: "enter" }, "unknown")).toBe("nearby");
+  });
+
+  it("建物の範囲から出た → 外出中", () => {
+    expect(judgeFromGeofenceEvent({ regionId: "building", type: "exit" }, "none")).toBe("away");
+  });
+
+  it("自宅Wi-Fiにつながっていれば、イベントに関係なく在宅", () => {
+    expect(judgeFromGeofenceEvent({ regionId: "building", type: "exit" }, "home")).toBe("home");
+  });
+});
+
+describe("shouldSendStatus(サーバー上の状態と比べて送るかどうか)", () => {
+  it("サーバー上の状態と同じなら送らない", () => {
+    expect(shouldSendStatus("home", "home")).toBe(false);
+  });
+
+  it("手動で外出中に変えた後に帰宅した場合は送る(端末の前回値が在宅のままでもサーバーと比べる)", () => {
+    expect(shouldSendStatus("home", "away")).toBe(true);
+  });
+
+  it("サーバー上の状態が分からなければ送る", () => {
+    expect(shouldSendStatus("nearby", null)).toBe(true);
+  });
+
+  it("判定できなかった(null)なら送らない", () => {
+    expect(shouldSendStatus(null, "away")).toBe(false);
   });
 });

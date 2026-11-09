@@ -6,6 +6,7 @@ import React, {
   useMemo,
   useState,
 } from "react";
+import { AppState } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ApiClient, MemberView, PresenceStatus } from "../api";
 import { getOrCreateDeviceId } from "../deviceId";
@@ -28,7 +29,9 @@ import { registerForPushNotifications, subscribeToNotifications } from "../notif
 import {
   clearHomeWifi,
   isHomeWifiSupported,
+  refreshAutoStatus,
   registerHomeWifi,
+  rememberStatus,
   startHomeGeofence,
   stopHomeGeofence,
 } from "../location";
@@ -197,6 +200,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
+    if (!ready || !memberId) return;
+    // アプリを開いたとき(起動時・裏から戻ったとき)に、いまの状況で自動判定し直す(F4)。
+    // バックグラウンドの判定がOSの都合で取りこぼされていても、開けば正しい状態に直るようにするため。
+    let running = false;
+    const run = async () => {
+      if (running) return;
+      running = true;
+      try {
+        const status = await refreshAutoStatus();
+        if (status) await refreshMembers();
+      } catch {
+        // 判定できなくても画面の利用は妨げない
+      } finally {
+        running = false;
+      }
+    };
+    run();
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") run();
+    });
+    return () => sub.remove();
+  }, [ready, memberId, refreshMembers]);
+
+  useEffect(() => {
     // 帰宅・外出のプッシュ通知を受け取った瞬間に、一覧をその場で最新化する
     // (通知が届いてから次の定期更新まで待たせないため)
     const unsubscribe = subscribeToNotifications(() => {
@@ -329,6 +356,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!api || !memberId) return;
       await withLoading(async () => {
         await api.updateStatus(memberId, status, source);
+        // 通信できないときの比較用に、自動判定の前回値もそろえておく
+        await rememberStatus(status).catch(() => {});
         await refreshMembers();
       });
     },

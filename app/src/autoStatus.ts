@@ -54,3 +54,36 @@ export function judgeAutoStatus(input: {
   if (wifi === "other") return "nearby";
   return distanceM <= homeRadiusM ? "home" : "nearby";
 }
+
+/** ジオフェンス(自宅・建物の2つの範囲)の出入りイベント。 */
+export interface GeofenceEvent {
+  regionId: "home" | "building";
+  type: "enter" | "exit";
+}
+
+/**
+ * 現在地が取れなかったときに、ジオフェンスの出入りイベントそのものから3段階のステータスを判定する(F4・F24)。
+ * アプリが閉じているときの現在地の取得は失敗しやすいため、OSが知らせてくれた「どの範囲に入った・出た」を
+ * 捨てずに判定に使う。
+ */
+export function judgeFromGeofenceEvent(event: GeofenceEvent, wifi: WifiMatch): PresenceStatus {
+  if (wifi === "home") return "home";
+  if (event.regionId === "home") {
+    if (event.type === "exit") return "nearby";
+    // 自宅Wi-Fiが登録済みでつながっていなければ、同じ建物内(1Fロビー等)にいるとみなす
+    return wifi === "other" ? "nearby" : "home";
+  }
+  return event.type === "exit" ? "away" : "nearby";
+}
+
+/**
+ * 判定結果をサーバーへ送るべきかどうか。
+ * 比べる相手は「サーバー上のいまの自分の状態」(取得できなかった場合のみ端末に覚えている前回値)。
+ * 手動切替・管理者の変更・Web版の自動判定で状態が変わっていても、ずれたまま送信が止まらないようにするため。
+ */
+export function shouldSendStatus(
+  next: PresenceStatus | null,
+  current: PresenceStatus | null
+): next is PresenceStatus {
+  return next !== null && next !== current;
+}
