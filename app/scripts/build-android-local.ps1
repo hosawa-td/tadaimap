@@ -56,9 +56,9 @@ if ($AllAbis) {
 }
 if ($LASTEXITCODE -ne 0) { throw "Gradleビルドに失敗しました" }
 
-$version = (node -p "require('$($buildDir -replace '\\','/')/app.config.js').expo.version")
+# ファイルが増えないよう、バージョンは名前に付けず毎回同じ名前で上書きする
 New-Item -ItemType Directory -Force $outDir | Out-Null
-$apk = Join-Path $outDir "tadaimap-$version-local.apk"
+$apk = Join-Path $outDir "tadaimap.apk"
 Copy-Item "app\build\outputs\apk\release\app-release.apk" $apk -Force
 Write-Host "完了: $apk"
 
