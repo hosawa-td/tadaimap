@@ -232,14 +232,7 @@ export function createApp(
       if (!member.statusSetByAdmin) {
         // 通知の送信に失敗しても、既に保存済みの状態更新自体は成功として返す
         try {
-          const group = await repository.getGroup(member.groupId);
-          await notifyGroupOfStatusChange(
-            repository,
-            pushSender,
-            webPushSender,
-            member,
-            group?.nearbyLabel ?? NEARBY_LABEL_DEFAULT
-          );
+          await notifyGroupOfStatusChange(repository, pushSender, webPushSender, member);
         } catch (err) {
           // eslint-disable-next-line no-console
           console.error("[notify] 状態変更の通知送信に失敗しました", err);
@@ -443,10 +436,14 @@ async function notifyGroupOfStatusChange(
   repository: Repository,
   pushSender: PushSender,
   webPushSender: WebPushSender,
-  member: Member,
-  nearbyLabel: string
+  member: Member
 ): Promise<void> {
-  const groupMembers = await repository.getMembersByGroup(member.groupId);
+  // 読み込みを同時に行い、通知を出すまでの待ち時間を短くする
+  const [group, groupMembers] = await Promise.all([
+    repository.getGroup(member.groupId),
+    repository.getMembersByGroup(member.groupId),
+  ]);
+  const nearbyLabel = group?.nearbyLabel ?? NEARBY_LABEL_DEFAULT;
   const label = member.showName ? member.name : "家族の誰か";
   const body =
     member.status === "home"
@@ -456,7 +453,9 @@ async function notifyGroupOfStatusChange(
       : `${label}が外出しました`;
   const targets = groupMembers.filter((m) => m.memberId !== member.memberId && m.notifyEnabled);
   const nativeTargets = targets.filter((m) => m.pushToken);
-  const webTargets = targets.filter((m) => m.webPushSubscription);
+  // アプリ(ネイティブ)の通知を受け取れる人にはWeb通知を送らない。
+  // 両方送ると、Web通知をタップしたときにアプリではなくWeb版が開いてしまうため。
+  const webTargets = targets.filter((m) => m.webPushSubscription && !m.pushToken);
   await Promise.all([
     pushSender.send(
       nativeTargets.map((m) => ({ to: m.pushToken as string, title: "タダイマップ", body }))

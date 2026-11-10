@@ -123,6 +123,23 @@ describe("状態変更時のWeb Push通知", () => {
     expect(webPush.sent[0].body).toContain("帰宅しました");
   });
 
+  it("アプリの通知トークンも持つメンバーにはWeb Pushを送らず、アプリ通知だけ送る(タップでアプリが開くように)", async () => {
+    const webPush = new FakeWebPushSender();
+    const { app, push, memberIdA, memberIdB } = await setupGroupWithTwoMembers(webPush);
+    await request(app)
+      .patch(`/members/${memberIdB}/web-push-subscription`)
+      .send({ deviceId: "dev-2", subscription: VALID_SUBSCRIPTION });
+    await request(app)
+      .patch(`/members/${memberIdB}/push-token`)
+      .send({ deviceId: "dev-2", pushToken: "ExponentPushToken[yyy]" });
+
+    await request(app).patch(`/members/${memberIdA}/status`).send({ deviceId: "dev-1", status: "away" });
+
+    expect(webPush.sent).toHaveLength(0);
+    expect(push.sent).toHaveLength(1);
+    expect(push.sent[0].to).toBe("ExponentPushToken[yyy]");
+  });
+
   it("購読していないメンバーにはWeb Push通知が送られない", async () => {
     const webPush = new FakeWebPushSender();
     const { app, memberIdA } = await setupGroupWithTwoMembers(webPush);

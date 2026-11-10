@@ -38,7 +38,11 @@ export class VapidWebPushSender implements WebPushSender {
     await Promise.all(
       messages.map(async (m) => {
         try {
-          await webpush.sendNotification(m.subscription, JSON.stringify({ title: m.title, body: m.body }));
+          // urgency: "high" で端末の省電力待機中でもすぐ届ける。TTL(保持秒数)は短くし、遅れて古い通知が届くのを防ぐ
+          await webpush.sendNotification(m.subscription, JSON.stringify({ title: m.title, body: m.body }), {
+            urgency: "high",
+            TTL: 300,
+          });
         } catch (err) {
           // eslint-disable-next-line no-console
           console.error("[webpush] 通知の送信に失敗しました", err);

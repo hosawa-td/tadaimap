@@ -21,7 +21,10 @@ export class ExpoPushSender implements PushSender {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { Expo } = require("expo-server-sdk");
       const expo = new Expo();
-      const validMessages = messages.filter((m) => Expo.isExpoPushToken(m.to));
+      // priority: "high" でスマホの省電力待機中でもすぐ届ける
+      const validMessages = messages
+        .filter((m) => Expo.isExpoPushToken(m.to))
+        .map((m) => ({ ...m, priority: "high" }));
       const chunks = expo.chunkPushNotifications(validMessages);
       for (const chunk of chunks) {
         await expo.sendPushNotificationsAsync(chunk);
