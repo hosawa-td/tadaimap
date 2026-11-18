@@ -527,10 +527,10 @@
     return hh + ":" + mm;
   }
 
-  // 「M/D HH:MM」(例:11/18 16:26)。いつの帰宅・外出か分かるよう、日付も付ける
+  // 「M/D(曜) HH:MM」(例:11/18(水) 16:26)。いつの帰宅・外出か分かるよう、日付と曜日も付ける
   function formatDateTime(iso) {
     var d = new Date(iso);
-    return (d.getMonth() + 1) + "/" + d.getDate() + " " + formatTime(iso);
+    return (d.getMonth() + 1) + "/" + d.getDate() + "(" + "日月火水木金土".charAt(d.getDay()) + ") " + formatTime(iso);
   }
 
   // ---------- Join view ----------

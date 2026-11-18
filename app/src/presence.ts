@@ -7,10 +7,12 @@ export function formatTime(iso: string): string {
   return `${hh}:${mm}`;
 }
 
-/** 「M/D HH:MM」(例:11/18 16:26)。いつの帰宅・外出か分かるよう、日付も付ける。 */
+const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+
+/** 「M/D(曜) HH:MM」(例:11/18(水) 16:26)。いつの帰宅・外出か分かるよう、日付と曜日も付ける。 */
 export function formatDateTime(iso: string): string {
   const d = new Date(iso);
-  return `${d.getMonth() + 1}/${d.getDate()} ${formatTime(iso)}`;
+  return `${d.getMonth() + 1}/${d.getDate()}(${WEEKDAYS[d.getDay()]}) ${formatTime(iso)}`;
 }
 
 export function statusLabel(member: MemberView): string {

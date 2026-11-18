@@ -33,9 +33,9 @@ describe("formatTime", () => {
 });
 
 describe("formatDateTime", () => {
-  it("ISO日時をM/D HH:MMに整形する(月日は0埋めしない)", () => {
-    expect(formatDateTime(new Date(2026, 10, 18, 16, 26).toISOString())).toBe("11/18 16:26");
-    expect(formatDateTime(new Date(2026, 0, 5, 9, 5).toISOString())).toBe("1/5 09:05");
+  it("ISO日時をM/D(曜) HH:MMに整形する(月日は0埋めしない)", () => {
+    expect(formatDateTime(new Date(2026, 10, 18, 16, 26).toISOString())).toBe("11/18(水) 16:26");
+    expect(formatDateTime(new Date(2026, 0, 5, 9, 5).toISOString())).toBe("1/5(月) 09:05");
   });
 });
 
@@ -51,19 +51,19 @@ describe("formatStatusLine", () => {
   it("在宅の場合は「在宅・M/D HH:MMに帰宅」", () => {
     const iso = new Date(2026, 0, 1, 15, 3).toISOString();
     const line = formatStatusLine(member({ status: "home", statusUpdatedAt: iso }));
-    expect(line).toBe("在宅 · 1/1 15:03に帰宅");
+    expect(line).toBe("在宅 · 1/1(木) 15:03に帰宅");
   });
 
   it("外出中の場合は「外出中・M/D HH:MMに外出」", () => {
     const iso = new Date(2026, 10, 18, 16, 26).toISOString();
     const line = formatStatusLine(member({ status: "away", statusUpdatedAt: iso }));
-    expect(line).toBe("外出中 · 11/18 16:26に外出");
+    expect(line).toBe("外出中 · 11/18(水) 16:26に外出");
   });
 
   it("nearbyの場合は本人の呼び方を使う", () => {
     const iso = new Date(2026, 0, 1, 12, 0).toISOString();
     const line = formatStatusLine(member({ status: "nearby", nearbyLabel: "ロビー", statusUpdatedAt: iso }));
-    expect(line).toBe("ロビー · 1/1 12:00から");
+    expect(line).toBe("ロビー · 1/1(木) 12:00から");
   });
 
   it("管理者による強制変更の場合は、時刻を表示しない", () => {
