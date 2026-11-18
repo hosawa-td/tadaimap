@@ -15,6 +15,8 @@ export const STORAGE_KEYS = {
   homeLat: "tadaimap.homeLat",
   homeLng: "tadaimap.homeLng",
   homeWifiSsid: "tadaimap.homeWifiSsid",
+  strictHomeWifi: "tadaimap.strictHomeWifi",
+  registeredWifis: "tadaimap.registeredWifis",
 } as const;
 
 /** 1台の端末が複数の家族グループに参加できるように、参加中のグループを配列で保持する。 */
@@ -206,16 +208,56 @@ export async function loadHomeGeofenceConfig(): Promise<{
  * 自宅のWi-Fi名(F24)。家族に見せる必要の無い情報のため、サーバーには送らず端末内にのみ保存する。
  * バックグラウンドのタスク(location.ts)からも参照する。
  */
-export async function saveHomeWifiSsid(ssid: string | null): Promise<void> {
-  if (ssid) {
-    await AsyncStorage.setItem(STORAGE_KEYS.homeWifiSsid, ssid);
+export type WifiKind = "home" | "room";
+
+/** 登録したWi-Fi。home=自宅のWi-Fi(つながれば在宅)、room=別の部屋のWi-Fi(つながれば近くにいる扱い)。 */
+export interface RegisteredWifi {
+  ssid: string;
+  kind: WifiKind;
+}
+
+export async function saveRegisteredWifis(list: RegisteredWifi[]): Promise<void> {
+  if (list.length > 0) {
+    await AsyncStorage.setItem(STORAGE_KEYS.registeredWifis, JSON.stringify(list));
   } else {
-    await AsyncStorage.removeItem(STORAGE_KEYS.homeWifiSsid);
+    await AsyncStorage.removeItem(STORAGE_KEYS.registeredWifis);
   }
 }
 
-export async function loadHomeWifiSsid(): Promise<string | null> {
-  return AsyncStorage.getItem(STORAGE_KEYS.homeWifiSsid);
+export async function loadRegisteredWifis(): Promise<RegisteredWifi[]> {
+  const raw = await AsyncStorage.getItem(STORAGE_KEYS.registeredWifis);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.filter(
+          (w): w is RegisteredWifi =>
+            !!w && typeof w.ssid === "string" && w.ssid.length > 0 && (w.kind === "home" || w.kind === "room")
+        );
+      }
+    } catch {
+      // 壊れていれば、下の旧形式の読み込みへ
+    }
+  }
+  // 以前の版(自宅Wi-Fiを1つだけ保存していた形式)からの引き継ぎ
+  const legacy = await AsyncStorage.getItem(STORAGE_KEYS.homeWifiSsid);
+  return legacy ? [{ ssid: legacy, kind: "home" }] : [];
+}
+
+/**
+ * 「自宅Wi-Fiにつながっているときだけ在宅にする」設定(F24)。マンションの別の階・別の部屋と区別するための設定。
+ * 端末内にのみ保存する。
+ */
+export async function saveStrictHomeWifi(enabled: boolean): Promise<void> {
+  if (enabled) {
+    await AsyncStorage.setItem(STORAGE_KEYS.strictHomeWifi, "1");
+  } else {
+    await AsyncStorage.removeItem(STORAGE_KEYS.strictHomeWifi);
+  }
+}
+
+export async function loadStrictHomeWifi(): Promise<boolean> {
+  return (await AsyncStorage.getItem(STORAGE_KEYS.strictHomeWifi)) === "1";
 }
 
 function memberOrderKey(groupId: string): string {
@@ -257,5 +299,7 @@ export async function clearAllMemberships(): Promise<void> {
     STORAGE_KEYS.homeLat,
     STORAGE_KEYS.homeLng,
     STORAGE_KEYS.homeWifiSsid,
+    STORAGE_KEYS.strictHomeWifi,
+    STORAGE_KEYS.registeredWifis,
   ]);
 }

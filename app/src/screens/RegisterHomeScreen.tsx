@@ -42,7 +42,7 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
   const [statusText, setStatusText] = useState(
     fromSettings
       ? `現在の設定：半径 ${homeRadiusM}m。ピンをドラッグするか地図をタップすると位置を変更できます。`
-      : "地図をタップするか「現在地を自宅として設定」を押して、自宅の位置を選んでください。"
+      : "地図をタップするか「現在地にピンを移動」を押して、自宅の位置を選んでください。"
   );
 
   useEffect(() => {
@@ -76,7 +76,7 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
           "現在地を取得しました。ただし「常に許可」が選択されていないため、アプリを閉じている間の自動判定はできません。"
         );
       } else {
-        setStatusText("現在地を自宅として設定しました。ピンの位置は地図上でも調整できます。");
+        setStatusText("ピンを現在地に移動しました。位置は地図上でも調整できます。「この位置で保存する」で確定します。");
       }
     } catch (err) {
       setStatusText("位置情報を取得できませんでした。地図をタップして位置を選ぶこともできます。");
@@ -86,12 +86,12 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
   const handleMapPress = (e: MapPressEvent) => {
     const { latitude, longitude } = e.nativeEvent.coordinate;
     setCoords({ lat: latitude, lng: longitude });
-    setStatusText("地図で選んだ場所を自宅として設定しました。");
+    setStatusText("地図で選んだ場所にピンを置きました。「この位置で保存する」で確定します。");
   };
 
   const handleMarkerDragEnd = (coordinate: LatLng) => {
     setCoords({ lat: coordinate.latitude, lng: coordinate.longitude });
-    setStatusText("ピンの位置を自宅として設定しました。");
+    setStatusText("ピンの位置を変更しました。「この位置で保存する」で確定します。");
   };
 
   const handleRadiusChange = (value: number) => {
@@ -103,7 +103,7 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
 
   const handleSave = async () => {
     if (!coords) {
-      Alert.alert("自宅の位置が未設定です", "地図をタップするか「現在地を自宅として設定」を押して、位置を選んでください。");
+      Alert.alert("自宅の位置が未設定です", "地図をタップするか「現在地にピンを移動」を押して、位置を選んでください。");
       return;
     }
     try {
@@ -212,7 +212,7 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
         </Text>
 
         <TouchableOpacity style={styles.outlineButton} onPress={handleUseCurrentLocation}>
-          <Text style={styles.outlineButtonText}>現在地を自宅として設定</Text>
+          <Text style={styles.outlineButtonText}>現在地にピンを移動</Text>
         </TouchableOpacity>
         <Text style={styles.statusText}>{statusText}</Text>
 

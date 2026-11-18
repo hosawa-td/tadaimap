@@ -28,16 +28,18 @@ export default function SettingsScreen() {
     homeRadiusM,
     buildingRadiusM,
     nearbyLabel,
-    homeWifiSsid,
+    registeredWifis,
     homeWifiSupported,
+    strictHomeWifi,
+    changeStrictHomeWifi,
     amIAdmin,
     inviteCode,
     groupId,
     memberships,
     saveProfile,
     saveNearbyLabel,
-    saveHomeWifi,
-    removeHomeWifi,
+    addWifi,
+    removeWifi,
     setNotifyEnabled,
     refreshInviteCode,
     switchGroup,
@@ -98,25 +100,42 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleRegisterHomeWifi = async () => {
+  const homeWifis = registeredWifis.filter((w) => w.kind === "home");
+  const roomWifis = registeredWifis.filter((w) => w.kind === "room");
+
+  const handleAddWifi = async (kind: "home" | "room") => {
     try {
-      await saveHomeWifi();
+      await addWifi(kind);
     } catch (err) {
-      Alert.alert("登録できませんでした", err instanceof Error ? err.message : "自宅のWi-Fiを登録できませんでした");
+      Alert.alert("登録できませんでした", err instanceof Error ? err.message : "Wi-Fiを登録できませんでした");
     }
   };
 
-  const handleRemoveHomeWifi = () => {
-    Alert.alert("自宅のWi-Fiの登録を解除しますか？", "解除後は、これまでどおり自宅からの距離だけで判定します。", [
-      { text: "キャンセル", style: "cancel" },
-      {
-        text: "解除する",
-        style: "destructive",
-        onPress: () => {
-          removeHomeWifi().catch(() => Alert.alert("エラー", "登録の解除に失敗しました"));
+  const handleToggleStrictHomeWifi = async (value: boolean) => {
+    try {
+      await changeStrictHomeWifi(value);
+    } catch {
+      Alert.alert("エラー", "設定の変更に失敗しました");
+    }
+  };
+
+  const handleRemoveWifi = (wifi: { ssid: string; kind: "home" | "room" }) => {
+    Alert.alert(
+      `「${wifi.ssid}」の登録を解除しますか？`,
+      wifi.kind === "home"
+        ? "自宅のWi-Fiが1つも無くなると、これまでどおり自宅からの距離だけで判定します。"
+        : "このWi-Fiにつながっても「近くにいる」とは判定しなくなります。",
+      [
+        { text: "キャンセル", style: "cancel" },
+        {
+          text: "解除する",
+          style: "destructive",
+          onPress: () => {
+            removeWifi(wifi.ssid).catch(() => Alert.alert("エラー", "登録の解除に失敗しました"));
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
 
   const handleCopyCode = async () => {
@@ -267,20 +286,52 @@ export default function SettingsScreen() {
               <View style={styles.rowTextBlock}>
                 <Text style={styles.rowTitle}>自宅のWi-Fi</Text>
                 <Text style={styles.rowSub}>
-                  {homeWifiSsid
-                    ? `登録済み：${homeWifiSsid}
-つながっている間は「在宅」、自宅の近くでもつながっていないときは「${nearbyLabel}」と表示します`
+                  {homeWifis.length > 0
+                    ? `つながっている間は「在宅」、自宅の近くでもつながっていないときは「${nearbyLabel}」と表示します。2.4GHz用・5GHz用など、複数登録できます`
                     : "登録すると、マンションの自分の部屋にいるか、ロビーなど建物内の別の場所にいるかを見分けます。自宅のWi-Fiにつないだ状態で登録してください"}
                 </Text>
               </View>
-              <TouchableOpacity style={styles.smallButton} onPress={handleRegisterHomeWifi}>
-                <Text style={styles.smallButtonText}>{homeWifiSsid ? "変更" : "登録"}</Text>
+              <TouchableOpacity style={styles.smallButton} onPress={() => handleAddWifi("home")}>
+                <Text style={styles.smallButtonText}>追加</Text>
               </TouchableOpacity>
             </View>
-            {homeWifiSsid && (
-              <TouchableOpacity onPress={handleRemoveHomeWifi}>
-                <Text style={styles.linkText}>登録を解除する</Text>
+            {homeWifis.map((w) => (
+              <View key={w.ssid} style={styles.row}>
+                <Text style={[styles.rowSub, styles.rowTextBlock]}>登録済み：{w.ssid}</Text>
+                <TouchableOpacity onPress={() => handleRemoveWifi(w)}>
+                  <Text style={styles.linkText}>解除</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+            <View style={styles.row}>
+              <View style={styles.rowTextBlock}>
+                <Text style={styles.rowTitle}>別の部屋のWi-Fi</Text>
+                <Text style={styles.rowSub}>
+                  同じマンションの別の階・別の部屋のWi-Fiです。登録したWi-Fiにつながると「{nearbyLabel}」にします。その部屋のWi-Fiにつないだ状態で追加してください
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.smallButton} onPress={() => handleAddWifi("room")}>
+                <Text style={styles.smallButtonText}>追加</Text>
               </TouchableOpacity>
+            </View>
+            {roomWifis.map((w) => (
+              <View key={w.ssid} style={styles.row}>
+                <Text style={[styles.rowSub, styles.rowTextBlock]}>登録済み：{w.ssid}</Text>
+                <TouchableOpacity onPress={() => handleRemoveWifi(w)}>
+                  <Text style={styles.linkText}>解除</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+            {homeWifis.length > 0 && (
+              <View style={styles.row}>
+                <View style={styles.rowTextBlock}>
+                  <Text style={styles.rowTitle}>別の階・別の部屋を区別する</Text>
+                  <Text style={styles.rowSub}>
+                    オンにすると、自宅のWi-Fiにつながっているときだけ「在宅」にします。同じマンションの別の階・別の部屋にいるときに、端末のWi-Fiをオフにしていても「在宅」にならなくなります
+                  </Text>
+                </View>
+                <Switch value={strictHomeWifi} onValueChange={handleToggleStrictHomeWifi} />
+              </View>
             )}
           </View>
         )}

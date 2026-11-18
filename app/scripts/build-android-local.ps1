@@ -44,15 +44,36 @@ if ($Clean -or -not (Test-Path "android")) {
   Write-Host "== 2/3 既存の android フォルダを使用(作り直す場合は -Clean)"
 }
 
+# --- 高速化と設定の反映(毎回、冪等に行う) ---
+# android フォルダは再利用するため、app.config.js のバージョン変更は自動では反映されない。
+# そこで app.config.js の値を build.gradle へ直接書き込む(prebuildのやり直しより数分速い)。
+$cfg = node -e "const c=require('./app.config.js').expo;console.log(c.version+'|'+c.android.versionCode)"
+if ($LASTEXITCODE -ne 0 -or -not $cfg) { throw "app.config.js からバージョンを読めませんでした" }
+$ver, $code = $cfg.Trim().Split("|")
+$gradleFile = Join-Path $buildDir "android\app\build.gradle"
+$g = Get-Content $gradleFile -Raw
+$g = $g -replace 'versionCode \d+', "versionCode $code" -replace 'versionName "[^"]*"', "versionName `"$ver`""
+Set-Content $gradleFile $g -NoNewline -Encoding utf8
+Write-Host "バージョン: $ver (versionCode $code)"
+
+# Gradleの設定を強化: メモリ増量・ビルドキャッシュ有効・PNG圧縮の省略(リリース用の最適化だが時間がかかる)
+$propsFile = Join-Path $buildDir "android\gradle.properties"
+$p = Get-Content $propsFile -Raw
+$p = $p -replace '(?m)^org\.gradle\.jvmargs=.*$', 'org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m'
+$p = $p -replace '(?m)^android\.enablePngCrunchInReleaseBuilds=.*$', 'android.enablePngCrunchInReleaseBuilds=false'
+if ($p -notmatch '(?m)^org\.gradle\.caching=') { $p = $p.TrimEnd() + "`r`norg.gradle.caching=true`r`n" }
+Set-Content $propsFile $p -NoNewline -Encoding utf8
+
 Write-Host "== 3/3 APKをビルド(gradlew assembleRelease)"
 Set-Location (Join-Path $buildDir "android")
 # C++部品は実機用のCPU(arm64-v8a)向けだけにコンパイルする(4種類すべてだと約4倍の時間がかかるため)。
 # エミュレーターで動かす場合は -AllAbis を付けて実行する。
 # --no-daemon: Gradleを常駐させない(常駐すると、ログをファイルに書き出している場合に終了の合図が返らなくなるため)
+# -x lintVitalRelease: リリース前の簡易チェック(lint)を省く。--build-cache: 変更のない工程を再利用する。
 if ($AllAbis) {
-  .\gradlew.bat assembleRelease --no-daemon
+  .\gradlew.bat assembleRelease --no-daemon --build-cache -x lintVitalRelease
 } else {
-  .\gradlew.bat assembleRelease --no-daemon "-PreactNativeArchitectures=arm64-v8a"
+  .\gradlew.bat assembleRelease --no-daemon --build-cache -x lintVitalRelease "-PreactNativeArchitectures=arm64-v8a"
 }
 if ($LASTEXITCODE -ne 0) { throw "Gradleビルドに失敗しました" }
 

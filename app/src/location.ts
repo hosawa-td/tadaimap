@@ -14,7 +14,16 @@ import {
   WifiState,
 } from "./autoStatus";
 import { getOrCreateDeviceId } from "./deviceId";
-import { loadHomeGeofenceConfig, loadHomeWifiSsid, saveHomeWifiSsid, STORAGE_KEYS } from "./storage";
+import {
+  loadHomeGeofenceConfig,
+  loadRegisteredWifis,
+  loadStrictHomeWifi,
+  RegisteredWifi,
+  saveRegisteredWifis,
+  saveStrictHomeWifi,
+  WifiKind,
+  STORAGE_KEYS,
+} from "./storage";
 
 export const GEOFENCE_TASK_NAME = "tadaimap-home-geofence";
 /** 自宅Wi-Fiへの接続をOSに見張らせるタスク(F24)。 */
@@ -85,21 +94,22 @@ async function reportAutoStatus(
   trigger: "geofence" | "wifi" | "periodic" | "foreground",
   geofenceEvent?: GeofenceEvent
 ): Promise<PresenceStatus | null> {
-  const [deviceId, memberId, groupId, config, homeSsid, lastStatus] = await Promise.all([
+  const [deviceId, memberId, groupId, config, wifis, strictWifi, lastStatus] = await Promise.all([
     getOrCreateDeviceId(),
     AsyncStorage.getItem(STORAGE_KEYS.memberId),
     AsyncStorage.getItem(STORAGE_KEYS.groupId),
     loadHomeGeofenceConfig(),
-    loadHomeWifiSsid(),
+    loadRegisteredWifis(),
+    loadStrictHomeWifi(),
     AsyncStorage.getItem(LAST_STATUS_KEY),
   ]);
   if (!memberId) return null;
 
-  const wifi = classifyWifi(readWifiState(), homeSsid);
+  const wifi = classifyWifi(readWifiState(), wifis);
 
-  // 自宅Wi-Fiにつながっていれば位置に関係なく在宅と判定できるため、電池節約のため現在地は取らない
+  // 登録したWi-Fi(自宅・別の部屋)につながっていれば位置に関係なく判定できるため、電池節約のため現在地は取らない
   let distanceM: number | null = null;
-  if (wifi !== "home" && config) {
+  if (wifi !== "home" && wifi !== "room" && config) {
     const position = await readCurrentPosition();
     if (position) distanceM = distanceMeters(position.lat, position.lng, config.lat, config.lng);
   }
@@ -109,9 +119,10 @@ async function reportAutoStatus(
     homeRadiusM: config?.homeRadiusM ?? 0,
     buildingRadiusM: config?.buildingRadiusM ?? 0,
     wifi,
+    strictWifi,
   });
   // 現在地が取れなくても、OSが知らせてくれた範囲の出入りから判定する
-  if (!status && geofenceEvent) status = judgeFromGeofenceEvent(geofenceEvent, wifi);
+  if (!status && geofenceEvent) status = judgeFromGeofenceEvent(geofenceEvent, wifi, strictWifi);
   if (!status) return null;
 
   const client = new ApiClient(API_BASE_URL, deviceId);
@@ -250,8 +261,7 @@ async function stopPeriodicCheck(): Promise<void> {
 /** 自宅Wi-Fiが登録済みであれば、Wi-Fiへの接続の見張りを開始する(F24)。 */
 async function startHomeWifiWatch(): Promise<void> {
   if (!TadaimapWifi) return;
-  const homeSsid = await loadHomeWifiSsid();
-  if (!homeSsid) return;
+  if ((await loadRegisteredWifis()).length === 0) return;
   try {
     await TadaimapWifi.startWifiWatchAsync(WIFI_TASK_NAME);
   } catch (err) {
@@ -277,27 +287,34 @@ export function isHomeWifiSupported(): boolean {
 }
 
 /**
- * いま接続中のWi-Fiを自宅Wi-Fiとして登録し、見張りを開始する(F24)。
- * 登録できない場合は、利用者向けの理由を含むErrorを投げる。
+ * いま接続中のWi-Fiを、自宅のWi-Fi(kind=home)または別の部屋のWi-Fi(kind=room)として登録し、見張りを開始する(F24)。
+ * 同じWi-Fiを登録し直すと種類が入れ替わる。登録できない場合は、利用者向けの理由を含むErrorを投げる。
+ * 登録後の一覧を返す。
  */
-export async function registerHomeWifi(): Promise<string> {
-  if (!TadaimapWifi) throw new Error("この端末では自宅Wi-Fiの判定を利用できません");
+export async function registerWifi(kind: WifiKind): Promise<RegisteredWifi[]> {
+  if (!isHomeWifiSupported()) throw new Error("この端末ではWi-Fiによる判定を利用できません");
   const permissions = await requestLocationPermissions();
   if (!permissions.foreground) {
     throw new Error("Wi-Fi名の読み取りには位置情報の許可が必要です");
   }
   const state = readWifiState();
   if (!state || !state.enabled) throw new Error("端末のWi-Fiがオフになっています");
-  if (!state.connected) throw new Error("Wi-Fiに接続していません。自宅のWi-Fiにつないでから登録してください");
-  if (!state.ssid) {
+  if (!state.connected) {
+    throw new Error(
+      `Wi-Fiに接続していません。${kind === "home" ? "自宅" : "その部屋"}のWi-Fiにつないでから登録してください`
+    );
+  }
+  const ssid = state.ssid;
+  if (!ssid) {
     throw new Error("Wi-Fi名を読み取れませんでした。位置情報をオンにし、権限を「常に許可」にしてください");
   }
-  await saveHomeWifiSsid(state.ssid);
+  const next = [...(await loadRegisteredWifis()).filter((w) => w.ssid !== ssid), { ssid, kind }];
+  await saveRegisteredWifis(next);
   await stopHomeWifiWatch();
   await startHomeWifiWatch();
   // 次のWi-Fi接続を待たずに、登録した時点の状態をすぐに反映する
   await reportAutoStatus("wifi");
-  return state.ssid;
+  return next;
 }
 
 /**
@@ -305,7 +322,19 @@ export async function registerHomeWifi(): Promise<string> {
  * 判定の結果サーバーへ送った(または一致を確認した)ステータスを返す。判定できなければnull。
  */
 export async function refreshAutoStatus(): Promise<PresenceStatus | null> {
-  if (!(await TaskManager.isTaskRegisteredAsync(GEOFENCE_TASK_NAME))) return null;
+  const config = await loadHomeGeofenceConfig();
+  // 自宅が未登録の端末では自動判定しない
+  if (!config) return null;
+  if (!(await TaskManager.isTaskRegisteredAsync(GEOFENCE_TASK_NAME))) {
+    // アプリの入れ直し・更新などでOSの見張りが消えていることがあるため、保存済みの自宅情報から登録し直す
+    try {
+      await startHomeGeofence(config.lat, config.lng, config.homeRadiusM, config.buildingRadiusM);
+    } catch (err) {
+      // 権限が無い等で登録できなくても、開いた時点のWi-Fi・現在地での判定は続ける
+      // eslint-disable-next-line no-console
+      console.warn("[foreground] ジオフェンスを再登録できませんでした", err);
+    }
+  }
   // 以前の版で自宅を登録した端末では定期確認が未登録のため、開いたついでに登録しておく
   if (!(await TaskManager.isTaskRegisteredAsync(WIFI_CHECK_TASK_NAME))) await startPeriodicCheck();
   return reportAutoStatus("foreground");
@@ -316,10 +345,25 @@ export async function rememberStatus(status: PresenceStatus): Promise<void> {
   await AsyncStorage.setItem(LAST_STATUS_KEY, status);
 }
 
-/** 自宅Wi-Fiの登録を解除し、従来の距離だけでの判定に戻す(F24)。 */
-export async function clearHomeWifi(): Promise<void> {
+/** 登録したWi-Fiを1つ解除する。自宅のWi-Fiが無くなれば、厳密モードも解除する(F24)。解除後の一覧を返す。 */
+export async function removeRegisteredWifi(ssid: string): Promise<RegisteredWifi[]> {
+  const next = (await loadRegisteredWifis()).filter((w) => w.ssid !== ssid);
+  await saveRegisteredWifis(next);
   await stopHomeWifiWatch();
-  await saveHomeWifiSsid(null);
+  await startHomeWifiWatch();
+  if (!next.some((w) => w.kind === "home")) await saveStrictHomeWifi(false);
+  // 解除した結果をすぐに反映する(例:別の部屋のWi-Fiを外したら、近くにいる扱いが解ける)
+  await reportAutoStatus("wifi");
+  return next;
+}
+
+/**
+ * 「自宅Wi-Fiにつながっているときだけ在宅にする」設定を切り替え、すぐに判定し直す(F24)。
+ * マンションで別の階・別の部屋にいるときに、Wi-Fiをオフにしていても在宅にならないようにするための設定。
+ */
+export async function setStrictHomeWifi(enabled: boolean): Promise<void> {
+  await saveStrictHomeWifi(enabled);
+  await reportAutoStatus("wifi");
 }
 
 export async function getCurrentLocation(): Promise<{ lat: number; lng: number }> {

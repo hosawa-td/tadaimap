@@ -14,9 +14,12 @@ import {
   addMembership,
   clearAllMemberships,
   loadHomeGeofenceConfig,
-  loadHomeWifiSsid,
+  loadRegisteredWifis,
+  loadStrictHomeWifi,
   loadMemberships,
   Membership,
+  RegisteredWifi,
+  WifiKind,
   removeMembership,
   replaceMemberships,
   saveHomeGeofenceConfig,
@@ -27,11 +30,12 @@ import {
 import { BUILDING_RADIUS_DEFAULT, NEARBY_LABEL_DEFAULT, RADIUS_DEFAULT } from "../validation";
 import { registerForPushNotifications, subscribeToNotifications } from "../notifications";
 import {
-  clearHomeWifi,
   isHomeWifiSupported,
   refreshAutoStatus,
-  registerHomeWifi,
+  registerWifi,
+  removeRegisteredWifi,
   rememberStatus,
+  setStrictHomeWifi,
   startHomeGeofence,
   stopHomeGeofence,
 } from "../location";
@@ -50,8 +54,10 @@ interface AppContextValue {
   homeRadiusM: number;
   buildingRadiusM: number;
   nearbyLabel: string;
-  /** 自宅Wi-Fi(F24)として登録したWi-Fi名。未登録ならnull。 */
-  homeWifiSsid: string | null;
+  /** 登録したWi-Fi(F24)。自宅のWi-Fiと別の部屋のWi-Fiを複数登録できる。 */
+  registeredWifis: RegisteredWifi[];
+  /** 自宅Wi-Fiにつながっているときだけ在宅にする設定(別の階・別の部屋との区別用)。 */
+  strictHomeWifi: boolean;
   /** この端末で自宅Wi-Fiの判定が使えるか(Android版のみ)。 */
   homeWifiSupported: boolean;
   amIAdmin: boolean;
@@ -71,9 +77,10 @@ interface AppContextValue {
   refreshMyGroups: () => Promise<void>;
   refreshMembers: (targetGroupId?: string) => Promise<void>;
   saveHome: (lat: number, lng: number, homeRadiusM: number, buildingRadiusM: number) => Promise<void>;
-  /** いま接続中のWi-Fiを自宅Wi-Fiとして登録する。登録できない理由はErrorのmessageで返す。 */
-  saveHomeWifi: () => Promise<void>;
-  removeHomeWifi: () => Promise<void>;
+  /** いま接続中のWi-Fiを、自宅のWi-Fi・別の部屋のWi-Fiとして登録する。登録できない理由はErrorのmessageで返す。 */
+  addWifi: (kind: WifiKind) => Promise<void>;
+  removeWifi: (ssid: string) => Promise<void>;
+  changeStrictHomeWifi: (enabled: boolean) => Promise<void>;
   setStatus: (status: PresenceStatus, source: "auto" | "manual") => Promise<void>;
   setMemberStatus: (targetMemberId: string, status: PresenceStatus) => Promise<void>;
   saveProfile: (fields: { name?: string; showName?: boolean }) => Promise<void>;
@@ -101,7 +108,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [homeRadiusM, setHomeRadiusM] = useState(RADIUS_DEFAULT);
   const [buildingRadiusM, setBuildingRadiusM] = useState(BUILDING_RADIUS_DEFAULT);
   const [nearbyLabel, setNearbyLabelState] = useState(NEARBY_LABEL_DEFAULT);
-  const [homeWifiSsid, setHomeWifiSsid] = useState<string | null>(null);
+  const [registeredWifis, setRegisteredWifis] = useState<RegisteredWifi[]>([]);
+  const [strictHomeWifi, setStrictHomeWifiState] = useState(false);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [members, setMembers] = useState<MemberView[]>([]);
   const [memberships, setMemberships] = useState<Membership[]>([]);
@@ -163,7 +171,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setHomeRadiusM(geofenceConfig.homeRadiusM);
         setBuildingRadiusM(geofenceConfig.buildingRadiusM);
       }
-      setHomeWifiSsid(await loadHomeWifiSsid());
+      setRegisteredWifis(await loadRegisteredWifis());
+      setStrictHomeWifiState(await loadStrictHomeWifi());
       try {
         await syncMembershipsWithServer(new ApiClient(API_BASE_URL, id));
       } catch {
@@ -222,6 +231,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
     return () => sub.remove();
   }, [ready, memberId, refreshMembers]);
+
+  useEffect(() => {
+    // アプリを開いたときに、この端末の通知先(プッシュトークン)をサーバーに登録する。
+    // 通知スイッチを操作したときだけ登録していると、Web版で通知を設定済みの人がアプリを
+    // 入れても、サーバーにはWeb通知の宛先しか残らず、通知をタップするとWeb版が開いてしまう。
+    if (!ready || !api || !memberId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const stored = await AsyncStorage.getItem(STORAGE_KEYS.notifyEnabled);
+        if (stored === "0") return; // 自分で通知をオフにしている場合は登録しない
+        const token = await registerForPushNotifications();
+        if (token && !cancelled) {
+          await api.updatePushToken(memberId, token);
+        }
+      } catch {
+        // 登録できなくてもアプリの利用は妨げない
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, api, memberId]);
 
   useEffect(() => {
     // 帰宅・外出のプッシュ通知を受け取った瞬間に、一覧をその場で最新化する
@@ -335,21 +367,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [api, memberId, withLoading]
   );
 
-  const saveHomeWifi = useCallback(async () => {
-    await withLoading(async () => {
-      const ssid = await registerHomeWifi();
-      setHomeWifiSsid(ssid);
-      // 登録と同時に自動判定が走り、自分のステータスが変わることがあるため一覧も取り直す
-      await refreshMembers();
-    });
-  }, [withLoading, refreshMembers]);
+  const addWifi = useCallback(
+    async (kind: WifiKind) => {
+      await withLoading(async () => {
+        setRegisteredWifis(await registerWifi(kind));
+        // 登録と同時に自動判定が走り、自分のステータスが変わることがあるため一覧も取り直す
+        await refreshMembers();
+      });
+    },
+    [withLoading, refreshMembers]
+  );
 
-  const removeHomeWifi = useCallback(async () => {
-    await withLoading(async () => {
-      await clearHomeWifi();
-      setHomeWifiSsid(null);
-    });
-  }, [withLoading]);
+  const removeWifi = useCallback(
+    async (ssid: string) => {
+      await withLoading(async () => {
+        const next = await removeRegisteredWifi(ssid);
+        setRegisteredWifis(next);
+        if (!next.some((w) => w.kind === "home")) setStrictHomeWifiState(false);
+        await refreshMembers();
+      });
+    },
+    [withLoading, refreshMembers]
+  );
+
+  const changeStrictHomeWifi = useCallback(
+    async (enabled: boolean) => {
+      await withLoading(async () => {
+        await setStrictHomeWifi(enabled);
+        setStrictHomeWifiState(enabled);
+        // 切り替えと同時に自動判定が走り、自分のステータスが変わることがあるため一覧も取り直す
+        await refreshMembers();
+      });
+    },
+    [withLoading, refreshMembers]
+  );
 
   const setStatus = useCallback(
     async (status: PresenceStatus, source: "auto" | "manual") => {
@@ -485,7 +536,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await refreshMembers(next.groupId);
     } else {
       await clearAllMemberships();
-      setHomeWifiSsid(null);
+      setRegisteredWifis([]);
+      setStrictHomeWifiState(false);
       setGroupId(null);
       setMemberId(null);
       setMyName("");
@@ -535,7 +587,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     homeRadiusM,
     buildingRadiusM,
     nearbyLabel,
-    homeWifiSsid,
+    registeredWifis,
+    strictHomeWifi,
     homeWifiSupported: isHomeWifiSupported(),
     amIAdmin,
     inviteCode,
@@ -549,8 +602,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     refreshMyGroups,
     refreshMembers,
     saveHome,
-    saveHomeWifi,
-    removeHomeWifi,
+    addWifi,
+    removeWifi,
+    changeStrictHomeWifi,
     setStatus,
     setMemberStatus,
     saveProfile,
