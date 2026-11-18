@@ -7,6 +7,12 @@ export function formatTime(iso: string): string {
   return `${hh}:${mm}`;
 }
 
+/** 「M/D HH:MM」(例:11/18 16:26)。いつの帰宅・外出か分かるよう、日付も付ける。 */
+export function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()} ${formatTime(iso)}`;
+}
+
 export function statusLabel(member: MemberView): string {
   if (member.status === "home") return "在宅";
   if (member.status === "nearby") return member.nearbyLabel;
@@ -16,7 +22,7 @@ export function statusLabel(member: MemberView): string {
 export function formatStatusLine(member: MemberView): string {
   // 管理者が代わりに変更した場合は、本人が実際に帰宅・外出した時刻ではないため表示しない
   if (member.statusSetByAdmin) return statusLabel(member);
-  const time = formatTime(member.statusUpdatedAt);
+  const time = formatDateTime(member.statusUpdatedAt);
   if (member.status === "home") return `在宅 · ${time}に帰宅`;
   if (member.status === "nearby") return `${member.nearbyLabel} · ${time}から`;
   return `外出中 · ${time}に外出`;
