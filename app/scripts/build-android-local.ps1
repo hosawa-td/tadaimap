@@ -53,7 +53,9 @@ $ver, $code = $cfg.Trim().Split("|")
 $gradleFile = Join-Path $buildDir "android\app\build.gradle"
 $g = Get-Content $gradleFile -Raw
 $g = $g -replace 'versionCode \d+', "versionCode $code" -replace 'versionName "[^"]*"', "versionName `"$ver`""
-Set-Content $gradleFile $g -NoNewline -Encoding utf8
+# Windows PowerShell 5.1 の -Encoding utf8 は先頭にBOMを付け、Gradleが読めなくなるため、BOM無しで保存する
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($gradleFile, $g, $utf8NoBom)
 Write-Host "バージョン: $ver (versionCode $code)"
 
 # Gradleの設定を強化: メモリ増量・ビルドキャッシュ有効・PNG圧縮の省略(リリース用の最適化だが時間がかかる)
@@ -62,7 +64,7 @@ $p = Get-Content $propsFile -Raw
 $p = $p -replace '(?m)^org\.gradle\.jvmargs=.*$', 'org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m'
 $p = $p -replace '(?m)^android\.enablePngCrunchInReleaseBuilds=.*$', 'android.enablePngCrunchInReleaseBuilds=false'
 if ($p -notmatch '(?m)^org\.gradle\.caching=') { $p = $p.TrimEnd() + "`r`norg.gradle.caching=true`r`n" }
-Set-Content $propsFile $p -NoNewline -Encoding utf8
+[System.IO.File]::WriteAllText($propsFile, $p, $utf8NoBom)
 
 Write-Host "== 3/3 APKをビルド(gradlew assembleRelease)"
 Set-Location (Join-Path $buildDir "android")
