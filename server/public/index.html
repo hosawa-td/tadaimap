@@ -19,12 +19,15 @@
     --on-primary:#FFFFFF;
     --accent:#D9920A;
     --on-accent:#FFFFFF;
-    --home:#4A7C59;
-    --home-soft:rgba(74,124,89,0.12);
-    --nearby:#B9770E;
-    --nearby-soft:rgba(217,146,10,0.14);
-    --away:#7D8A99;
-    --away-soft:rgba(125,138,153,0.15);
+    /* 3つの状態は「色相」と「塗り方」の両方で見分けられるようにしている
+       在宅=緑のべた塗り / 施設内=橙の淡い塗り+太枠 / 外出中=青みスレートの白地+破線 */
+    --home:#2F8F5B;
+    --home-soft:rgba(47,143,91,0.12);
+    --nearby:#D98200;
+    --nearby-soft:rgba(240,160,20,0.22);
+    --nearby-text:#8A5200;
+    --away:#5A7391;
+    --away-soft:rgba(90,115,145,0.12);
     --text:#1D1C17;
     --text-muted:#44474B;
     --text-faint:#7D8A99;
@@ -72,9 +75,9 @@
   .avatar{width:44px;height:44px;border-radius:50%;background:var(--surface-sand);color:var(--primary);display:flex;align-items:center;justify-content:center;font-weight:700;flex:none;}
   .avatar.anon{background:var(--away-soft);color:var(--text-muted);}
   /* 上部の状態選択ボタン(選択中)と同じ配色: 淡い背景 + 状態色の枠線・文字 */
-  .avatar.home{background:var(--home-soft);color:var(--home);border:2px solid var(--home);}
-  .avatar.nearby{background:var(--nearby-soft);color:var(--nearby);border:2px solid var(--nearby);}
-  .avatar.away{background:var(--away-soft);color:var(--away);border:2px solid var(--away);}
+  .avatar.home{background:var(--home);color:#fff;border:2.5px solid var(--home);}
+  .avatar.nearby{background:var(--nearby-soft);color:var(--nearby-text);border:2.5px solid var(--nearby);}
+  .avatar.away{background:var(--surface);color:var(--away);border:2.5px dashed var(--away);}
   .info{flex:1;min-width:0;}
   .name-row{display:flex;align-items:center;gap:6px;font-weight:700;font-size:14.5px;}
   .me-tag{font-size:10px;font-weight:700;color:var(--text-faint);background:var(--surface-sand);border-radius:6px;padding:1px 6px;}
@@ -89,15 +92,15 @@
   }
   .home-detail-clear:disabled{color:var(--text-faint);cursor:not-allowed;}
   .status{flex:none;font-size:12px;font-weight:700;padding:6px 11px;border-radius:100px;}
-  .status.home{background:var(--home-soft);color:var(--home);}
-  .status.nearby{background:var(--nearby-soft);color:var(--nearby);}
-  .status.away{background:var(--away-soft);color:var(--away);}
+  .status.home{background:var(--home);color:#fff;border:1.5px solid var(--home);}
+  .status.nearby{background:var(--nearby-soft);color:var(--nearby-text);border:1.5px solid var(--nearby);}
+  .status.away{background:var(--surface);color:var(--away);border:1.5px dashed var(--away);}
   .card.clickable{cursor:pointer;}
   .status-switch{display:flex;gap:8px;margin:18px 0 6px;}
   .status-switch button{flex:1;padding:12px 6px;border-radius:100px;border:1.5px solid var(--border);background:var(--surface);font-size:13px;font-weight:700;color:var(--text-muted);cursor:pointer;}
-  .status-switch button.active-home{border-color:var(--home);color:var(--home);background:var(--home-soft);}
-  .status-switch button.active-nearby{border-color:var(--nearby);color:var(--nearby);background:var(--nearby-soft);}
-  .status-switch button.active-away{border-color:var(--away);color:var(--away);background:var(--away-soft);}
+  .status-switch button.active-home{border:2.5px solid var(--home);color:#fff;background:var(--home);}
+  .status-switch button.active-nearby{border:2.5px solid var(--nearby);color:var(--nearby-text);background:var(--nearby-soft);}
+  .status-switch button.active-away{border:2.5px dashed var(--away);color:var(--away);background:var(--surface);}
   .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-end;justify-content:center;z-index:50;}
   .modal-card{background:var(--surface);width:100%;max-width:480px;border-radius:20px 20px 0 0;padding:20px 20px calc(20px + env(safe-area-inset-bottom, 0px));}
   .modal-title{font-size:16px;font-weight:700;margin:0 0 4px;}
@@ -495,7 +498,7 @@
   backupToCookie();
   var API_BASE = window.location.origin;
   // アプリ本体(app.config.js)のversionと合わせて手動で更新する
-  var WEB_APP_VERSION = "1.4.5";
+  var WEB_APP_VERSION = "1.4.6";
 
   function el(id) { return document.getElementById(id); }
 

@@ -220,24 +220,21 @@ export default function HomeScreen() {
         <StatusSwitchButton
           label="在宅"
           active={myStatus === "home"}
-          color={colors.home}
-          softColor={colors.homeSoft}
+          status="home"
           disabled={sending}
           onPress={() => handleSetStatus("home")}
         />
         <StatusSwitchButton
           label={nearbyLabel}
           active={myStatus === "nearby"}
-          color={colors.nearby}
-          softColor={colors.nearbySoft}
+          status="nearby"
           disabled={sending}
           onPress={() => handleSetStatus("nearby")}
         />
         <StatusSwitchButton
           label="外出中"
           active={myStatus === "away"}
-          color={colors.away}
-          softColor={colors.awaySoft}
+          status="away"
           disabled={sending}
           onPress={() => handleSetStatus("away")}
         />
@@ -321,15 +318,14 @@ export default function HomeScreen() {
   );
 }
 
-const STATUS_COLOR: Record<PresenceStatus, string> = {
-  home: colors.home,
-  nearby: colors.nearby,
-  away: colors.away,
-};
-const STATUS_SOFT_COLOR: Record<PresenceStatus, string> = {
-  home: colors.homeSoft,
-  nearby: colors.nearbySoft,
-  away: colors.awaySoft,
+// 状態ごとの見た目。上部の選択ボタン(選択中)・メンバーの丸・状態ラベルで共通に使う。
+const STATUS_STYLE: Record<
+  PresenceStatus,
+  { bg: string; border: string; text: string; borderStyle: "solid" | "dashed" }
+> = {
+  home: { bg: colors.home, border: colors.home, text: colors.onPrimary, borderStyle: "solid" },
+  nearby: { bg: colors.nearbySoft, border: colors.nearby, text: colors.nearbyText, borderStyle: "solid" },
+  away: { bg: colors.surface, border: colors.away, text: colors.away, borderStyle: "dashed" },
 };
 
 function MemberRow({
@@ -363,15 +359,16 @@ function MemberRow({
       <View
         style={[
           styles.avatar,
-          // 上部の状態選択ボタン(選択中)と同じ配色: 淡い背景 + 状態色の枠線・文字
+          // 上部の状態選択ボタン(選択中)と同じ見た目
           {
-            backgroundColor: STATUS_SOFT_COLOR[member.status],
-            borderWidth: 2,
-            borderColor: STATUS_COLOR[member.status],
+            backgroundColor: STATUS_STYLE[member.status].bg,
+            borderWidth: 2.5,
+            borderColor: STATUS_STYLE[member.status].border,
+            borderStyle: STATUS_STYLE[member.status].borderStyle,
           },
         ]}
       >
-        <Text style={[styles.avatarText, { color: STATUS_COLOR[member.status] }]}>
+        <Text style={[styles.avatarText, { color: STATUS_STYLE[member.status].text }]}>
           {member.nameOrAnonymous.slice(0, 1)}
         </Text>
       </View>
@@ -392,8 +389,18 @@ function MemberRow({
         <Text style={styles.memberTime}>{formatStatusLine(member)}</Text>
         {homeDetailText(member) && <Text style={styles.homeDetailCaption}>{homeDetailText(member)}</Text>}
       </View>
-      <View style={[styles.statusPill, { backgroundColor: STATUS_SOFT_COLOR[member.status] }]}>
-        <Text style={[styles.statusPillText, { color: STATUS_COLOR[member.status] }]}>
+      <View
+        style={[
+          styles.statusPill,
+          {
+            backgroundColor: STATUS_STYLE[member.status].bg,
+            borderWidth: 1.5,
+            borderColor: STATUS_STYLE[member.status].border,
+            borderStyle: STATUS_STYLE[member.status].borderStyle,
+          },
+        ]}
+      >
+        <Text style={[styles.statusPillText, { color: STATUS_STYLE[member.status].text }]}>
           {statusLabel(member)}
         </Text>
       </View>
@@ -404,28 +411,29 @@ function MemberRow({
 function StatusSwitchButton({
   label,
   active,
-  color,
-  softColor,
+  status,
   disabled,
   onPress,
 }: {
   label: string;
   active: boolean;
-  color: string;
-  softColor: string;
+  status: PresenceStatus;
   disabled: boolean;
   onPress: () => void;
 }) {
+  const st = STATUS_STYLE[status];
   return (
     <TouchableOpacity
       style={[
         styles.statusSwitchButton,
-        { backgroundColor: active ? softColor : colors.surface, borderColor: active ? color : colors.border },
+        active
+          ? { backgroundColor: st.bg, borderColor: st.border, borderStyle: st.borderStyle, borderWidth: 2.5 }
+          : { backgroundColor: colors.surface, borderColor: colors.border },
       ]}
       onPress={onPress}
       disabled={disabled}
     >
-      <Text style={[styles.statusSwitchButtonText, { color: active ? color : colors.textSecondary }]} numberOfLines={1}>
+      <Text style={[styles.statusSwitchButtonText, { color: active ? st.text : colors.textSecondary }]} numberOfLines={1}>
         {label}
       </Text>
     </TouchableOpacity>
