@@ -6,11 +6,13 @@ import {
   generateInviteCode,
   inviteCodeExpiryFrom,
 } from "./repository";
-import { Group, Member, PresenceStatus } from "./types";
+import { Group, LogEntry, Member, PresenceStatus } from "./types";
 import { NEARBY_LABEL_DEFAULT } from "./validation";
 
 const GROUPS_SHEET = "Groups";
 const MEMBERS_SHEET = "Members";
+const LOGS_SHEET = "Logs";
+const LOGS_COLUMNS = ["at", "received_at", "member_id", "device_id", "origin", "event", "detail"] as const;
 
 const GROUPS_COLUMNS = [
   "group_id",
@@ -155,6 +157,58 @@ export class SheetsRepository implements Repository {
       throw new Error(`シート ${sheetName} が見つかりません`);
     }
     return sheet.properties.sheetId;
+  }
+
+  /** Logsシートが無ければ、見出し行つきで作成する(初回のログ保存時に自動で行う)。 */
+  private async ensureLogsSheet(): Promise<void> {
+    const meta = await this.sheetsApi.spreadsheets.get({ spreadsheetId: this.spreadsheetId });
+    if (meta.data.sheets?.some((s) => s.properties?.title === LOGS_SHEET)) return;
+    await this.sheetsApi.spreadsheets.batchUpdate({
+      spreadsheetId: this.spreadsheetId,
+      requestBody: { requests: [{ addSheet: { properties: { title: LOGS_SHEET } } }] },
+    });
+    await this.appendRow(LOGS_SHEET, [...LOGS_COLUMNS]);
+  }
+
+  async addLogs(entries: LogEntry[]): Promise<void> {
+    if (entries.length === 0) return;
+    const values = entries.map((e) => [e.at, e.receivedAt, e.memberId, e.deviceId, e.origin, e.event, e.detail]);
+    const append = () =>
+      this.sheetsApi.spreadsheets.values.append({
+        spreadsheetId: this.spreadsheetId,
+        range: `${LOGS_SHEET}!A:A`,
+        valueInputOption: "RAW",
+        requestBody: { values },
+      });
+    try {
+      await append();
+    } catch (err) {
+      await this.ensureLogsSheet();
+      await append();
+    }
+  }
+
+  async getLogs(options: { memberId?: string; limit: number }): Promise<LogEntry[]> {
+    let rows: string[][];
+    try {
+      rows = await this.readSheet(LOGS_SHEET);
+    } catch (err) {
+      return [];
+    }
+    const entries: LogEntry[] = rows
+      .slice(1)
+      .filter((r) => r[0])
+      .map((r) => ({
+        at: r[0],
+        receivedAt: r[1] ?? "",
+        memberId: r[2] ?? "",
+        deviceId: r[3] ?? "",
+        origin: (r[4] === "server" ? "server" : "client") as "client" | "server",
+        event: r[5] ?? "",
+        detail: r[6] ?? "",
+      }))
+      .filter((e) => !options.memberId || e.memberId === options.memberId);
+    return entries.reverse().slice(0, options.limit);
   }
 
   private rowToGroup(row: string[]): Group {

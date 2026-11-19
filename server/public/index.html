@@ -71,6 +71,10 @@
   .drag-handle{flex:none;width:26px;height:44px;margin:-8px -6px -8px -4px;display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:18px;line-height:1;cursor:grab;touch-action:none;}
   .avatar{width:44px;height:44px;border-radius:50%;background:var(--surface-sand);color:var(--primary);display:flex;align-items:center;justify-content:center;font-weight:700;flex:none;}
   .avatar.anon{background:var(--away-soft);color:var(--text-muted);}
+  /* 上部の状態選択ボタン(選択中)と同じ配色: 淡い背景 + 状態色の枠線・文字 */
+  .avatar.home{background:var(--home-soft);color:var(--home);border:2px solid var(--home);}
+  .avatar.nearby{background:var(--nearby-soft);color:var(--nearby);border:2px solid var(--nearby);}
+  .avatar.away{background:var(--away-soft);color:var(--away);border:2px solid var(--away);}
   .info{flex:1;min-width:0;}
   .name-row{display:flex;align-items:center;gap:6px;font-weight:700;font-size:14.5px;}
   .me-tag{font-size:10px;font-weight:700;color:var(--text-faint);background:var(--surface-sand);border-radius:6px;padding:1px 6px;}
@@ -491,17 +495,24 @@
   backupToCookie();
   var API_BASE = window.location.origin;
   // アプリ本体(app.config.js)のversionと合わせて手動で更新する
-  var WEB_APP_VERSION = "1.4.4";
+  var WEB_APP_VERSION = "1.4.5";
 
   function el(id) { return document.getElementById(id); }
 
   async function api(path, options) {
     options = options || {};
-    var res = await fetch(API_BASE + path, {
-      method: options.method || "GET",
-      headers: Object.assign({ "Content-Type": "application/json", "x-device-id": deviceId }, options.headers || {}),
-      body: options.body ? JSON.stringify(options.body) : undefined,
-    });
+    var res;
+    try {
+      res = await fetch(API_BASE + path, {
+        method: options.method || "GET",
+        headers: Object.assign({ "Content-Type": "application/json", "x-device-id": deviceId }, options.headers || {}),
+        body: options.body ? JSON.stringify(options.body) : undefined,
+      });
+    } catch (netErr) {
+      // 通信そのものが失敗(電波・Wi-Fiが切れている等)した場合は、原因調査用にログへ残す
+      logEvent("fetch_error", (options.method || "GET") + " " + path.replace(/[0-9a-f-]{36}/g, ":id") + " " + (netErr && netErr.message));
+      throw netErr;
+    }
     var json = await res.json().catch(function () { return {}; });
     if (!res.ok) {
       var err = new Error((json.error && json.error.message) || "通信エラーが発生しました");
@@ -532,6 +543,102 @@
     var d = new Date(iso);
     return (d.getMonth() + 1) + "/" + d.getDate() + "(" + "日月火水木金土".charAt(d.getDay()) + ") " + formatTime(iso);
   }
+
+  // ---------- 接続状況ログ(夜間に外出のままになる原因の調査用) ----------
+  // 画面の表示/非表示・オンライン/オフライン・通信失敗などを端末内に貯め、
+  // 画面が表示されたときやオンラインに戻ったときにサーバーへアップロードする。
+  var LOG_KEY = "tadaimap-web.diagLogs";
+  var HEARTBEAT_KEY = "tadaimap-web.lastAlive";
+  var LOG_MAX_STORED = 300;
+  var logFlushing = false;
+
+  function readLogQueue() {
+    try {
+      var parsed = JSON.parse(localStorage.getItem(LOG_KEY) || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  }
+  function writeLogQueue(queue) {
+    try {
+      localStorage.setItem(LOG_KEY, JSON.stringify(queue.slice(-LOG_MAX_STORED)));
+    } catch (e) {}
+  }
+  function connectionInfo() {
+    var c = navigator.connection;
+    return {
+      online: navigator.onLine,
+      type: c && c.type ? c.type : undefined,
+      eff: c && c.effectiveType ? c.effectiveType : undefined,
+      vis: document.visibilityState,
+    };
+  }
+  function logEvent(event, detail) {
+    var info = connectionInfo();
+    var text = (detail ? detail + " " : "") + JSON.stringify(info);
+    var queue = readLogQueue();
+    queue.push({ at: new Date().toISOString(), event: event, detail: text });
+    writeLogQueue(queue);
+  }
+  async function flushLogs() {
+    if (logFlushing) return;
+    var memberId = storageGet(STORAGE.memberId);
+    if (!memberId || !navigator.onLine) return;
+    var queue = readLogQueue();
+    if (queue.length === 0) return;
+    logFlushing = true;
+    var batch = queue.slice(0, 200);
+    try {
+      var res = await fetch(API_BASE + "/members/" + memberId + "/logs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-device-id": deviceId },
+        body: JSON.stringify({ deviceId: deviceId, entries: batch }),
+        keepalive: true,
+      });
+      if (res.ok || res.status === 403 || res.status === 404) {
+        // 送信済み(または送れない理由が恒久的)なものは端末から消す。送信中に増えた分は残す
+        writeLogQueue(readLogQueue().slice(batch.length));
+      }
+    } catch (e) {
+      // 通信できない間は端末に貯めたままにして、次の機会に再送する
+    } finally {
+      logFlushing = false;
+    }
+  }
+  // 画面が止まっていた時間の検出: 表示中は30秒ごとに「生きている」印を残し、
+  // 次に動いたとき印との差が大きければ「その間は端末側でこの画面が止まっていた」と分かるようにする
+  function checkGapSinceLastAlive(trigger) {
+    var last = Number(localStorage.getItem(HEARTBEAT_KEY) || 0);
+    var now = Date.now();
+    if (last && now - last > 120000) {
+      logEvent("gap", trigger + " 前回の動作から" + Math.round((now - last) / 1000) + "秒");
+    }
+    try { localStorage.setItem(HEARTBEAT_KEY, String(now)); } catch (e) {}
+  }
+  setInterval(function () {
+    if (document.visibilityState === "visible") {
+      try { localStorage.setItem(HEARTBEAT_KEY, String(Date.now())); } catch (e) {}
+    }
+  }, 30000);
+
+  window.addEventListener("online", function () { logEvent("online"); flushLogs(); });
+  window.addEventListener("offline", function () { logEvent("offline"); });
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") {
+      checkGapSinceLastAlive("visible");
+      logEvent("visible");
+      flushLogs();
+    } else {
+      logEvent("hidden");
+    }
+  });
+  window.addEventListener("pageshow", function (e) { logEvent("pageshow", e.persisted ? "bfcache" : ""); });
+  window.addEventListener("pagehide", function () { logEvent("pagehide"); flushLogs(); });
+  document.addEventListener("freeze", function () { logEvent("freeze"); });
+  document.addEventListener("resume", function () { logEvent("resume"); });
+  checkGapSinceLastAlive("boot");
+  logEvent("boot", "v" + WEB_APP_VERSION);
 
   // ---------- Join view ----------
   var joinCode = el("join-code");
@@ -643,7 +750,7 @@
       var initial = m.nameOrAnonymous.slice(0, 1);
       card.innerHTML =
         '<div class="drag-handle" aria-label="並び替え">⠿</div>' +
-        '<div class="avatar' + (m.isMe || m.nameOrAnonymous !== "メンバー" ? "" : " anon") + '">' + initial + "</div>" +
+        '<div class="avatar ' + m.status + '">' + initial + "</div>" +
         '<div class="info">' +
           '<div class="name-row">' + m.nameOrAnonymous +
             (m.isMe ? ' <span class="me-tag">あなた</span>' : "") +
@@ -1301,6 +1408,7 @@
     }
     if (storageGet(STORAGE.groupId) && storageGet(STORAGE.memberId)) {
       showHomeView();
+      flushLogs();
     } else {
       showJoinView();
     }

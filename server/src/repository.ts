@@ -1,4 +1,4 @@
-import { Group, Member, PresenceStatus } from "./types";
+import { Group, LogEntry, Member, PresenceStatus } from "./types";
 
 export interface Repository {
   createGroup(deviceId: string, name: string): Promise<{ group: Group; member: Member }>;
@@ -78,6 +78,12 @@ export interface Repository {
 
   /** 管理者がグループそのものを削除する(所属メンバー全員も削除される)。 */
   deleteGroup(groupId: string, requesterDeviceId: string): Promise<void>;
+
+  /** 接続状況の解析用ログを追記する。 */
+  addLogs(entries: LogEntry[]): Promise<void>;
+
+  /** 解析用ログを新しい順に取得する。memberIdを指定するとそのメンバー分だけに絞る。 */
+  getLogs(options: { memberId?: string; limit: number }): Promise<LogEntry[]>;
 }
 
 /**

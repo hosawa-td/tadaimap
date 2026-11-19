@@ -10,7 +10,7 @@ import { MemoryRepository } from "./repository.memory";
 import { SheetsRepository } from "./repository.sheets";
 import { PushSender, ExpoPushSender } from "./push";
 import { WebPushSender, NoopWebPushSender, VapidWebPushSender, WebPushSubscription } from "./webpush";
-import { Member, MemberView, PresenceStatus } from "./types";
+import { LogEntry, Member, MemberView, PresenceStatus } from "./types";
 import {
   isValidBuildingRadius,
   isValidDeviceId,
@@ -24,6 +24,8 @@ import {
   isValidWebPushSubscription,
   NEARBY_LABEL_DEFAULT,
 } from "./validation";
+
+const MAX_LOG_ENTRIES_PER_REQUEST = 200;
 
 function getDeviceId(req: Request): string | undefined {
   const fromBody = req.body?.deviceId;
@@ -227,7 +229,33 @@ export function createApp(
           'statusは"home"・"nearby"・"away"のいずれかを指定してください'
         );
       }
+      const fromStatus = (await repository.getMemberById(memberId).catch(() => null))?.status ?? null;
       const member = await repository.updateStatus(memberId, deviceId, status as PresenceStatus);
+      // 「Wi-Fi切断で外出のまま」等の原因調査のため、状態変更の要求を毎回サーバー側でも記録する。
+      // 記録に失敗しても状態更新自体は成功として扱う。
+      const nowIso = new Date().toISOString();
+      repository
+        .addLogs([
+          {
+            at: nowIso,
+            receivedAt: nowIso,
+            memberId,
+            deviceId,
+            origin: "server",
+            event: "status_change",
+            detail: JSON.stringify({
+              from: fromStatus,
+              to: status,
+              source: typeof req.body?.source === "string" ? req.body.source.slice(0, 20) : "unknown",
+              byAdmin: member.statusSetByAdmin,
+              ua: (req.header("user-agent") ?? "").slice(0, 120),
+            }),
+          },
+        ])
+        .catch((err) => {
+          // eslint-disable-next-line no-console
+          console.error("[log] 状態変更ログの保存に失敗しました", err);
+        });
       // 管理者による強制変更の場合は、本人の意思による変化ではないため通知しない
       if (!member.statusSetByAdmin) {
         // 通知の送信に失敗しても、既に保存済みの状態更新自体は成功として返す
@@ -239,6 +267,63 @@ export function createApp(
         }
       }
       res.status(200).json({ ok: true });
+    })
+  );
+
+  // 接続状況ログのアップロード(Web版の端末側ログ。本人の端末のみ送信できる)
+  app.post(
+    "/members/:memberId/logs",
+    asyncHandler(async (req, res) => {
+      const deviceId = getDeviceId(req);
+      const { memberId } = req.params;
+      const { entries } = req.body ?? {};
+      if (!isValidDeviceId(deviceId)) {
+        throw new AppError("VALIDATION_ERROR", "device_idは必須です");
+      }
+      if (!Array.isArray(entries) || entries.length === 0 || entries.length > MAX_LOG_ENTRIES_PER_REQUEST) {
+        throw new AppError("VALIDATION_ERROR", `entriesは1〜${MAX_LOG_ENTRIES_PER_REQUEST}件の配列で指定してください`);
+      }
+      const member = await repository.getMemberById(memberId);
+      if (!member) {
+        throw new AppError("NOT_FOUND", "メンバーが見つかりません");
+      }
+      if (member.deviceId !== deviceId) {
+        throw new AppError("FORBIDDEN", "このメンバーのログを送信する権限がありません");
+      }
+      const receivedAt = new Date().toISOString();
+      const valid: LogEntry[] = [];
+      for (const e of entries) {
+        if (!e || typeof e.event !== "string" || e.event.length === 0) continue;
+        const atMs = typeof e.at === "string" ? Date.parse(e.at) : NaN;
+        valid.push({
+          at: Number.isFinite(atMs) ? new Date(atMs).toISOString() : receivedAt,
+          receivedAt,
+          memberId,
+          deviceId,
+          origin: "client",
+          event: e.event.slice(0, 40),
+          detail: (typeof e.detail === "string" ? e.detail : JSON.stringify(e.detail ?? "")).slice(0, 500),
+        });
+      }
+      await repository.addLogs(valid);
+      res.status(200).json({ ok: true, saved: valid.length });
+    })
+  );
+
+  // 解析用: 保存されたログを新しい順に取得する。環境変数DIAG_TOKENを設定し、
+  // ?token=... または x-diag-token ヘッダーで一致した場合のみ返す(未設定なら無効)。
+  app.get(
+    "/diag/logs",
+    asyncHandler(async (req, res) => {
+      const expected = process.env.DIAG_TOKEN;
+      const given = (req.query.token as string | undefined) ?? req.header("x-diag-token");
+      if (!expected || given !== expected) {
+        throw new AppError("FORBIDDEN", "ログを閲覧する権限がありません");
+      }
+      const memberId = typeof req.query.memberId === "string" ? req.query.memberId : undefined;
+      const limit = Math.min(Math.max(Number(req.query.limit) || 500, 1), 5000);
+      const logs = await repository.getLogs({ memberId, limit });
+      res.status(200).json({ count: logs.length, logs });
     })
   );
 

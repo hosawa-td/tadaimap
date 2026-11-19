@@ -360,8 +360,20 @@ function MemberRow({
       >
         <Ionicons name="reorder-three" size={22} color={colors.textFaint} />
       </GHTouchableOpacity>
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>{member.nameOrAnonymous.slice(0, 1)}</Text>
+      <View
+        style={[
+          styles.avatar,
+          // 上部の状態選択ボタン(選択中)と同じ配色: 淡い背景 + 状態色の枠線・文字
+          {
+            backgroundColor: STATUS_SOFT_COLOR[member.status],
+            borderWidth: 2,
+            borderColor: STATUS_COLOR[member.status],
+          },
+        ]}
+      >
+        <Text style={[styles.avatarText, { color: STATUS_COLOR[member.status] }]}>
+          {member.nameOrAnonymous.slice(0, 1)}
+        </Text>
       </View>
       <View style={styles.memberInfo}>
         <View style={styles.memberNameRow}>

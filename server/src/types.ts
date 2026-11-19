@@ -56,3 +56,19 @@ export interface MemberView {
    */
   home: { lat: number; lng: number; homeRadiusM: number; buildingRadiusM: number } | null;
 }
+
+/** 接続状況の解析用ログ1件。Web版の端末側ログと、サーバーが状態変更時に自動で残すログの両方を表す。 */
+export interface LogEntry {
+  /** 記録された日時(ISO8601)。端末ログは端末の時計、サーバーログはサーバーの時計。 */
+  at: string;
+  /** サーバーがログを受け取った日時(ISO8601)。 */
+  receivedAt: string;
+  memberId: string;
+  deviceId: string;
+  /** "client"(端末から送信)または "server"(サーバーが自動記録)。 */
+  origin: "client" | "server";
+  /** 例: "offline" / "online" / "hidden" / "visible" / "status_change" */
+  event: string;
+  /** 補足情報(JSON文字列等)。 */
+  detail: string;
+}

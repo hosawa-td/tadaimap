@@ -6,7 +6,7 @@ import {
   generateInviteCode,
   inviteCodeExpiryFrom,
 } from "./repository";
-import { Group, Member, PresenceStatus } from "./types";
+import { Group, LogEntry, Member, PresenceStatus } from "./types";
 import { NEARBY_LABEL_DEFAULT } from "./validation";
 
 /**
@@ -16,6 +16,7 @@ import { NEARBY_LABEL_DEFAULT } from "./validation";
 export class MemoryRepository implements Repository {
   private groups = new Map<string, Group>();
   private members = new Map<string, Member>();
+  private logs: LogEntry[] = [];
 
   async createGroup(deviceId: string, name: string) {
     const now = new Date();
@@ -309,6 +310,17 @@ export class MemoryRepository implements Repository {
       throw new AppError("FORBIDDEN", "このメンバーの状態を変更する権限がありません");
     }
     return { member, isAdminChange: true };
+  }
+
+  async addLogs(entries: LogEntry[]): Promise<void> {
+    this.logs.push(...entries);
+  }
+
+  async getLogs(options: { memberId?: string; limit: number }): Promise<LogEntry[]> {
+    const filtered = options.memberId
+      ? this.logs.filter((l) => l.memberId === options.memberId)
+      : this.logs;
+    return [...filtered].reverse().slice(0, options.limit);
   }
 
   private issueUniqueInviteCode(): string {
