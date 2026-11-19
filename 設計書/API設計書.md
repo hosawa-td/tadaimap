@@ -44,7 +44,7 @@ APIサーバーが提供するエンドポイント一覧。すべてスプレ�
 - リクエスト：`{ "device_id": string, "status": "home" | "nearby" | "away", "source": "auto" | "manual" }`
 - レスポンス：`{ "ok": true }`
 - 権限：`device_id`が対象メンバー本人のものでなくても、同じグループの管理者（F12）であれば実行できる（それ以外は`403 FORBIDDEN`）
-- 処理：`status`を更新し、`home_detail`（F16）を空にリセットする。
+- 処理：`status`を更新し、`home_detail`（F16）を空にリセットする。あわせて、変更前後の状態・`source`・User-Agent・管理者による代理変更かどうかを`Logs`シートへ`origin="server"`、`event="status_change"`で記録する（F26。記録に失敗しても状態更新は成功として返す）。
   - `device_id`が本人のものである場合（通常の変更）：`status_updated_at`を現在時刻に更新し、`status_set_by_admin`を`FALSE`にする。更新後、同グループの他メンバーのうち`notify_enabled=TRUE`の端末へ、ネイティブアプリには`push_token`を用いてExpo Push Notification Service経由、Web版には`web_push_subscription`を用いてWeb Push（VAPID）経由で、それぞれ独立に通知を送信する。通知の送信に失敗しても、本エンドポイントのレスポンスは`200 OK`のまま返す（状態更新自体は成立しているため）。
   - `device_id`が管理者自身のもので、対象が別メンバーである場合（代理変更）：`status_updated_at`は更新せず（本人が実際に帰宅・外出した時刻ではないため）、`status_set_by_admin`を`TRUE`にする。この場合、通知は一切送信しない（本人の意思によらない変更のため）。
 - `GET /groups/:groupId/members`のレスポンスに含まれる`statusSetByAdmin`が`true`の間は、アプリ・Web版とも一覧上で帰宅・外出時刻を表示しない（F12を参照）。本人が改めて自分で状態を変更すると`status_set_by_admin`は`FALSE`に戻り、通常どおり時刻が表示されるようになる。
@@ -117,6 +117,19 @@ APIサーバーが提供するエンドポイント一覧。すべてスプレ�
 - リクエスト：ヘッダーに`device_id`
 - レスポンス：`{ "memberships": [{ "groupId": string, "memberId": string, "myName": string, "inviteCode": string | null }] }`
 - 処理：`Members`シートを`device_id`で検索し、該当する全行（複数グループに参加している場合は複数件）について、それぞれの`group_id`から招待コードを引いて返す。端末内の保存内容（キャッシュ）をこの結果で置き換えるために使う（端末の保存領域が失われた場合の復元用。詳細はF18を参照）。
+
+### 17. `POST /members/:memberId/logs` — 接続状況ログのアップロード（F26）
+
+- リクエスト：`{ "deviceId": string, "entries": [{ "at": ISO8601, "event": string, "detail"?: string }] }`（1〜200件）
+- レスポンス：`{ "ok": true, "saved": number }`（`event`が空の要素は無視される）
+- 権限：`deviceId`が対象メンバー本人のものであること（それ以外は`403 FORBIDDEN`、メンバー不在は`404 NOT_FOUND`）
+- 処理：`Logs`シートへ`origin="client"`で追記する。`event`は40文字、`detail`は500文字まで。`at`が不正な場合はサーバー受信時刻で代用する。
+
+### 18. `GET /diag/logs` — 接続状況ログの閲覧（解析用・F26）
+
+- リクエスト：クエリ`token`（またはヘッダー`x-diag-token`）に環境変数`DIAG_TOKEN`と同じ値。任意で`memberId`（絞り込み）・`limit`（既定500、最大5000）
+- レスポンス：`{ "count": number, "logs": [{ at, receivedAt, memberId, deviceId, origin, event, detail }] }`（新しい順）
+- 権限：`DIAG_TOKEN`が未設定、または値が一致しない場合は`403 FORBIDDEN`（未設定なら機能は無効）
 
 ## Web版の配信について
 
