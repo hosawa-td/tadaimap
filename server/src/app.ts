@@ -27,6 +27,44 @@ import {
 
 const MAX_LOG_ENTRIES_PER_REQUEST = 200;
 
+/** 直前の自動更新と同じ状態が、この秒数以内に再送されたら重複として無視する(端末側の二重送信対策) */
+const AUTO_DUPLICATE_WINDOW_MS = 5_000;
+/** 直前の状態変更からこの秒数以内に届いた自動の「外出」は、Wi-Fiのゆれによる誤判定として無視する */
+const AUTO_AWAY_AFTER_CHANGE_GUARD_MS = 60_000;
+
+/** メンバーごとの、直近に受け付けた自動更新(サーバー再起動で消えてよい、重複排除用の一時記憶) */
+const recentAutoStatus = new Map<string, { status: PresenceStatus; atMs: number }>();
+
+/**
+ * 自動(source=auto)の状態更新を無視すべきなら、その理由を返す。反映してよければnull。
+ * - same_status: すでに同じ状態。変更ではないので通知・時刻更新をしない
+ * - duplicate: 直前に同じ自動更新を受け付けたばかり(同時二重送信)
+ * - flip_flop: 帰宅などの直後に届いた「外出」。家の中でWi-Fiが一瞬切れただけの可能性が高い
+ *   ※「帰宅(home)」は無視しない。誤判定で外出になっても、再接続で必ず戻せるようにするため
+ */
+function decideIgnoreAutoStatus(
+  memberId: string,
+  next: PresenceStatus,
+  before: Member,
+  nowMs: number
+): "same_status" | "duplicate" | "flip_flop" | null {
+  const recent = recentAutoStatus.get(memberId);
+  if (recent && recent.status === next && nowMs - recent.atMs < AUTO_DUPLICATE_WINDOW_MS) {
+    return "duplicate";
+  }
+  // 管理者による強制変更中の状態は、本人の自動更新で上書きされる(従来どおり)ため、ここでは判定しない
+  if (before.status === next && !before.statusSetByAdmin) {
+    return "same_status";
+  }
+  if (next === "away" && before.status !== "away" && !before.statusSetByAdmin) {
+    const lastChangeMs = Date.parse(before.statusUpdatedAt);
+    if (Number.isFinite(lastChangeMs) && nowMs - lastChangeMs < AUTO_AWAY_AFTER_CHANGE_GUARD_MS) {
+      return "flip_flop";
+    }
+  }
+  return null;
+}
+
 function getDeviceId(req: Request): string | undefined {
   const fromBody = req.body?.deviceId;
   const fromHeader = req.header("x-device-id");
@@ -229,33 +267,50 @@ export function createApp(
           'statusは"home"・"nearby"・"away"のいずれかを指定してください'
         );
       }
-      const fromStatus = (await repository.getMemberById(memberId).catch(() => null))?.status ?? null;
+      const source = typeof req.body?.source === "string" ? req.body.source.slice(0, 20) : "unknown";
+      // どの自動化(例: wifi_connect / wifi_disconnect)が送ったかの目印。任意項目。
+      const trigger = typeof req.body?.trigger === "string" ? req.body.trigger.slice(0, 30) : undefined;
+      const ua = (req.header("user-agent") ?? "").slice(0, 120);
+      const before = await repository.getMemberById(memberId).catch(() => null);
+      const fromStatus = before?.status ?? null;
+      const nowMs = Date.now();
+      const nowIso = new Date(nowMs).toISOString();
+      const writeLog = (event: string, detail: Record<string, unknown>) => {
+        // 記録に失敗しても状態更新自体は成功として扱う。
+        repository
+          .addLogs([{ at: nowIso, receivedAt: nowIso, memberId, deviceId, origin: "server", event, detail: JSON.stringify(detail) }])
+          .catch((err) => {
+            // eslint-disable-next-line no-console
+            console.error("[log] 状態変更ログの保存に失敗しました", err);
+          });
+      };
+
+      // 自動(ショートカット等)からの要求だけ、重複・誤判定のガードを通す。手動操作は常に反映する。
+      if (source === "auto" && before) {
+        const ignoreReason = decideIgnoreAutoStatus(memberId, status as PresenceStatus, before, nowMs);
+        if (ignoreReason) {
+          writeLog("status_ignored", { from: fromStatus, to: status, reason: ignoreReason, source, trigger, ua });
+          res.status(200).json({ ok: true, ignored: ignoreReason });
+          return;
+        }
+      }
+
       const member = await repository.updateStatus(memberId, deviceId, status as PresenceStatus);
+      if (source === "auto") {
+        recentAutoStatus.set(memberId, { status: status as PresenceStatus, atMs: nowMs });
+      }
       // 「Wi-Fi切断で外出のまま」等の原因調査のため、状態変更の要求を毎回サーバー側でも記録する。
-      // 記録に失敗しても状態更新自体は成功として扱う。
-      const nowIso = new Date().toISOString();
-      repository
-        .addLogs([
-          {
-            at: nowIso,
-            receivedAt: nowIso,
-            memberId,
-            deviceId,
-            origin: "server",
-            event: "status_change",
-            detail: JSON.stringify({
-              from: fromStatus,
-              to: status,
-              source: typeof req.body?.source === "string" ? req.body.source.slice(0, 20) : "unknown",
-              byAdmin: member.statusSetByAdmin,
-              ua: (req.header("user-agent") ?? "").slice(0, 120),
-            }),
-          },
-        ])
-        .catch((err) => {
-          // eslint-disable-next-line no-console
-          console.error("[log] 状態変更ログの保存に失敗しました", err);
-        });
+      writeLog("status_change", {
+        from: fromStatus,
+        to: status,
+        source,
+        trigger,
+        byAdmin: member.statusSetByAdmin,
+        sinceLastChangeSec: before?.statusUpdatedAt
+          ? Math.round((nowMs - Date.parse(before.statusUpdatedAt)) / 1000)
+          : undefined,
+        ua,
+      });
       // 管理者による強制変更の場合は、本人の意思による変化ではないため通知しない
       if (!member.statusSetByAdmin) {
         // 通知の送信に失敗しても、既に保存済みの状態更新自体は成功として返す
