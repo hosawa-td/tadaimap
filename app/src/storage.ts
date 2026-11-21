@@ -17,6 +17,7 @@ export const STORAGE_KEYS = {
   homeWifiSsid: "tadaimap.homeWifiSsid",
   strictHomeWifi: "tadaimap.strictHomeWifi",
   registeredWifis: "tadaimap.registeredWifis",
+  wifiOnlyMode: "tadaimap.wifiOnlyMode",
 } as const;
 
 /** 1台の端末が複数の家族グループに参加できるように、参加中のグループを配列で保持する。 */
@@ -260,6 +261,21 @@ export async function loadStrictHomeWifi(): Promise<boolean> {
   return (await AsyncStorage.getItem(STORAGE_KEYS.strictHomeWifi)) === "1";
 }
 
+/**
+ * 「位置情報を使わず、Wi-Fiの接続だけで在宅・外出を判定する」モード(F27)。端末内にのみ保存する。
+ */
+export async function saveWifiOnlyMode(enabled: boolean): Promise<void> {
+  if (enabled) {
+    await AsyncStorage.setItem(STORAGE_KEYS.wifiOnlyMode, "1");
+  } else {
+    await AsyncStorage.removeItem(STORAGE_KEYS.wifiOnlyMode);
+  }
+}
+
+export async function loadWifiOnlyMode(): Promise<boolean> {
+  return (await AsyncStorage.getItem(STORAGE_KEYS.wifiOnlyMode)) === "1";
+}
+
 function memberOrderKey(groupId: string): string {
   return `tadaimap.memberOrder.${groupId}`;
 }
@@ -301,5 +317,6 @@ export async function clearAllMemberships(): Promise<void> {
     STORAGE_KEYS.homeWifiSsid,
     STORAGE_KEYS.strictHomeWifi,
     STORAGE_KEYS.registeredWifis,
+    STORAGE_KEYS.wifiOnlyMode,
   ]);
 }

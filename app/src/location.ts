@@ -10,14 +10,18 @@ import {
   GeofenceEvent,
   judgeAutoStatus,
   judgeFromGeofenceEvent,
+  judgeWifiOnly,
   shouldSendStatus,
   WifiState,
 } from "./autoStatus";
 import { getOrCreateDeviceId } from "./deviceId";
+import { addDiagLog, flushDiagLogs } from "./diagLog";
 import {
   loadHomeGeofenceConfig,
   loadRegisteredWifis,
   loadStrictHomeWifi,
+  loadWifiOnlyMode,
+  saveWifiOnlyMode,
   RegisteredWifi,
   saveRegisteredWifis,
   saveStrictHomeWifi,
@@ -51,17 +55,17 @@ function readWifiState(): WifiState | null {
 }
 
 /** 現在地を取る。アプリが閉じているときは失敗しやすいため、直近(2分以内)のOSの記録にも頼る。 */
-async function readCurrentPosition(): Promise<{ lat: number; lng: number } | null> {
+async function readCurrentPosition(): Promise<{ lat: number; lng: number; src: "fresh" | "lastKnown" } | null> {
   try {
     // 既定(Balanced)の精度は誤差100m級になり、自宅の範囲(既定100m)の判定に使えないため高精度で取る
     const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-    return { lat: position.coords.latitude, lng: position.coords.longitude };
+    return { lat: position.coords.latitude, lng: position.coords.longitude, src: "fresh" };
   } catch {
     // 取れなければ下の直近の記録へ
   }
   try {
     const last = await Location.getLastKnownPositionAsync({ maxAge: 2 * 60 * 1000, requiredAccuracy: 100 });
-    if (last) return { lat: last.coords.latitude, lng: last.coords.longitude };
+    if (last) return { lat: last.coords.latitude, lng: last.coords.longitude, src: "lastKnown" };
   } catch {
     // 直近の記録も無ければ、呼び出し側で判定を見送るかイベントから判定する
   }
@@ -94,52 +98,88 @@ async function reportAutoStatus(
   trigger: "geofence" | "wifi" | "periodic" | "foreground",
   geofenceEvent?: GeofenceEvent
 ): Promise<PresenceStatus | null> {
-  const [deviceId, memberId, groupId, config, wifis, strictWifi, lastStatus] = await Promise.all([
+  const [deviceId, memberId, groupId, config, wifis, strictWifi, wifiOnly, lastStatus] = await Promise.all([
     getOrCreateDeviceId(),
     AsyncStorage.getItem(STORAGE_KEYS.memberId),
     AsyncStorage.getItem(STORAGE_KEYS.groupId),
     loadHomeGeofenceConfig(),
     loadRegisteredWifis(),
     loadStrictHomeWifi(),
+    loadWifiOnlyMode(),
     AsyncStorage.getItem(LAST_STATUS_KEY),
   ]);
   if (!memberId) return null;
 
-  const wifi = classifyWifi(readWifiState(), wifis);
+  const wifiState = readWifiState();
+  const wifi = classifyWifi(wifiState, wifis);
 
-  // 登録したWi-Fi(自宅・別の部屋)につながっていれば位置に関係なく判定できるため、電池節約のため現在地は取らない
-  let distanceM: number | null = null;
-  if (wifi !== "home" && wifi !== "room" && config) {
-    const position = await readCurrentPosition();
-    if (position) distanceM = distanceMeters(position.lat, position.lng, config.lat, config.lng);
-  }
-
-  let status = judgeAutoStatus({
-    distanceM,
-    homeRadiusM: config?.homeRadiusM ?? 0,
-    buildingRadiusM: config?.buildingRadiusM ?? 0,
+  // 「何をきっかけに動き、何を見て、何と判断し、送れたか」を端末ログに残す(後から原因を調べるため)
+  const diag: Record<string, unknown> = {
+    trigger,
+    mode: wifiOnly ? "wifi_only" : "location",
     wifi,
-    strictWifi,
-  });
-  // 現在地が取れなくても、OSが知らせてくれた範囲の出入りから判定する
-  if (!status && geofenceEvent) status = judgeFromGeofenceEvent(geofenceEvent, wifi, strictWifi);
-  if (!status) return null;
-
+    wifiOn: wifiState ? wifiState.enabled : null,
+    strict: strictWifi || undefined,
+    geo: geofenceEvent ? `${geofenceEvent.type}:${geofenceEvent.regionId}` : undefined,
+  };
   const client = new ApiClient(API_BASE_URL, deviceId);
+  // 結果を記録し、重要な出来事(送信した・失敗した・判断した)があったときは溜まったログも送る
+  const finish = async (status: PresenceStatus | null, important: boolean): Promise<PresenceStatus | null> => {
+    diag.judged = status ?? "none";
+    await addDiagLog("auto_check", diag);
+    await flushDiagLogs(client, memberId, { force: trigger === "foreground" || important });
+    return status;
+  };
+
+  let status: PresenceStatus | null;
+  if (wifiOnly) {
+    // 位置情報は使わない。Wi-Fiの接続状況だけで判定する(F27)
+    status = judgeWifiOnly(wifi);
+  } else {
+    // 登録したWi-Fi(自宅・別の部屋)につながっていれば位置に関係なく判定できるため、電池節約のため現在地は取らない
+    let distanceM: number | null = null;
+    if (wifi !== "home" && wifi !== "room" && config) {
+      const position = await readCurrentPosition();
+      diag.pos = position ? position.src : "none";
+      if (position) distanceM = distanceMeters(position.lat, position.lng, config.lat, config.lng);
+      diag.distM = distanceM === null ? undefined : Math.round(distanceM);
+    } else {
+      diag.pos = "skipped";
+    }
+
+    status = judgeAutoStatus({
+      distanceM,
+      homeRadiusM: config?.homeRadiusM ?? 0,
+      buildingRadiusM: config?.buildingRadiusM ?? 0,
+      wifi,
+      strictWifi,
+    });
+    // 現在地が取れなくても、OSが知らせてくれた範囲の出入りから判定する
+    if (!status && geofenceEvent) status = judgeFromGeofenceEvent(geofenceEvent, wifi, strictWifi);
+  }
+  if (!status) return finish(null, false);
+
   // 手動切替などで端末の前回値とサーバーがずれていても止まらないよう、サーバー上の状態と比べる
-  const current = (await fetchServerStatus(client, groupId, memberId)) ?? (lastStatus as PresenceStatus | null);
+  const serverStatus = await fetchServerStatus(client, groupId, memberId);
+  const current = serverStatus ?? (lastStatus as PresenceStatus | null);
+  diag.server = serverStatus ?? "unknown";
   if (!shouldSendStatus(status, current)) {
     await AsyncStorage.setItem(LAST_STATUS_KEY, status);
-    return status;
+    diag.sent = "same";
+    return finish(status, false);
   }
 
   try {
     await client.updateStatus(memberId, status, "auto");
     await AsyncStorage.setItem(LAST_STATUS_KEY, status);
-    return status;
+    diag.sent = "ok";
+    return finish(status, true);
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error(`[${trigger}] ステータス更新に失敗しました`, err);
+    diag.sent = "error";
+    diag.err = err instanceof Error ? err.message.slice(0, 80) : "unknown";
+    await finish(status, false);
     return null;
   }
 }
@@ -158,6 +198,7 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }) => {
   if (error) {
     // eslint-disable-next-line no-console
     console.error("[geofence] エラー", error);
+    await addDiagLog("task_error", { task: "geofence", err: String((error as { message?: string })?.message ?? error) });
     return;
   }
   if (!data) return;
@@ -167,7 +208,10 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }) => {
 });
 
 TaskManager.defineTask(WIFI_TASK_NAME, async ({ error }) => {
-  if (error) return;
+  if (error) {
+    await addDiagLog("task_error", { task: "wifi", err: String((error as { message?: string })?.message ?? error) });
+    return;
+  }
   // どのWi-Fiにつながった場合でも起こされるため、自宅Wi-Fiかどうかはここで判定する
   await reportAutoStatus("wifi");
 });
@@ -176,7 +220,8 @@ TaskManager.defineTask(WIFI_CHECK_TASK_NAME, async () => {
   try {
     await reportAutoStatus("periodic");
     return BackgroundTask.BackgroundTaskResult.Success;
-  } catch {
+  } catch (err) {
+    await addDiagLog("task_error", { task: "periodic", err: err instanceof Error ? err.message.slice(0, 80) : "unknown" });
     return BackgroundTask.BackgroundTaskResult.Failed;
   }
 });
@@ -201,24 +246,27 @@ export async function startHomeGeofence(
 ): Promise<void> {
   await stopHomeGeofence();
   await AsyncStorage.removeItem(LAST_STATUS_KEY);
-  await Location.startGeofencingAsync(GEOFENCE_TASK_NAME, [
-    {
-      identifier: HOME_REGION_ID,
-      latitude: lat,
-      longitude: lng,
-      radius: homeRadiusM,
-      notifyOnEnter: true,
-      notifyOnExit: true,
-    },
-    {
-      identifier: BUILDING_REGION_ID,
-      latitude: lat,
-      longitude: lng,
-      radius: buildingRadiusM,
-      notifyOnEnter: true,
-      notifyOnExit: true,
-    },
-  ]);
+  // Wi-Fiだけで判定するモード(F27)では、位置情報を使わないため、位置の見張り(ジオフェンス)は登録しない
+  if (!(await loadWifiOnlyMode())) {
+    await Location.startGeofencingAsync(GEOFENCE_TASK_NAME, [
+      {
+        identifier: HOME_REGION_ID,
+        latitude: lat,
+        longitude: lng,
+        radius: homeRadiusM,
+        notifyOnEnter: true,
+        notifyOnExit: true,
+      },
+      {
+        identifier: BUILDING_REGION_ID,
+        latitude: lat,
+        longitude: lng,
+        radius: buildingRadiusM,
+        notifyOnEnter: true,
+        notifyOnExit: true,
+      },
+    ]);
+  }
   await startPeriodicCheck();
   await startHomeWifiWatch();
 }
@@ -323,6 +371,13 @@ export async function registerWifi(kind: WifiKind): Promise<RegisteredWifi[]> {
  */
 export async function refreshAutoStatus(): Promise<PresenceStatus | null> {
   const config = await loadHomeGeofenceConfig();
+  const wifiOnly = await loadWifiOnlyMode();
+  if (wifiOnly) {
+    // Wi-Fiだけで判定するモードでは自宅の位置は不要。Wi-Fiの見張りと定期確認だけ動かす
+    if (!(await TaskManager.isTaskRegisteredAsync(WIFI_CHECK_TASK_NAME))) await startPeriodicCheck();
+    await startHomeWifiWatch();
+    return reportAutoStatus("foreground");
+  }
   // 自宅が未登録の端末では自動判定しない
   if (!config) return null;
   if (!(await TaskManager.isTaskRegisteredAsync(GEOFENCE_TASK_NAME))) {
@@ -351,7 +406,11 @@ export async function removeRegisteredWifi(ssid: string): Promise<RegisteredWifi
   await saveRegisteredWifis(next);
   await stopHomeWifiWatch();
   await startHomeWifiWatch();
-  if (!next.some((w) => w.kind === "home")) await saveStrictHomeWifi(false);
+  if (!next.some((w) => w.kind === "home")) {
+    await saveStrictHomeWifi(false);
+    // 自宅のWi-Fiが無いと「Wi-Fiだけで判定するモード」は成り立たないため、解除して位置での判定へ戻す
+    if (await loadWifiOnlyMode()) await setWifiOnlyMode(false);
+  }
   // 解除した結果をすぐに反映する(例:別の部屋のWi-Fiを外したら、近くにいる扱いが解ける)
   await reportAutoStatus("wifi");
   return next;
@@ -363,6 +422,42 @@ export async function removeRegisteredWifi(ssid: string): Promise<RegisteredWifi
  */
 export async function setStrictHomeWifi(enabled: boolean): Promise<void> {
   await saveStrictHomeWifi(enabled);
+  await reportAutoStatus("wifi");
+}
+
+/**
+ * 「位置情報を使わず、Wi-Fiの接続だけで判定する」モードを切り替え、すぐに判定し直す(F27)。
+ * オンにすると位置の見張り(ジオフェンス)を止め、Wi-Fiの見張りと約15分ごとの確認だけで判定する。
+ * オフに戻すと、自宅の位置が登録済みなら位置の見張りを再開する。
+ * 自宅のWi-Fiが未登録のときは、オンにできない(判定の手がかりが無くなるため)。
+ */
+export async function setWifiOnlyMode(enabled: boolean): Promise<void> {
+  if (enabled) {
+    const wifis = await loadRegisteredWifis();
+    if (!wifis.some((w) => w.kind === "home")) {
+      throw new Error("先に「自宅のWi-Fi」を登録してください");
+    }
+  }
+  await saveWifiOnlyMode(enabled);
+  if (enabled) {
+    if (await TaskManager.isTaskRegisteredAsync(GEOFENCE_TASK_NAME)) {
+      await Location.stopGeofencingAsync(GEOFENCE_TASK_NAME);
+    }
+    await startPeriodicCheck();
+    await startHomeWifiWatch();
+  } else {
+    const config = await loadHomeGeofenceConfig();
+    if (config) {
+      try {
+        await startHomeGeofence(config.lat, config.lng, config.homeRadiusM, config.buildingRadiusM);
+      } catch (err) {
+        // 権限が無い等で登録できなくても、Wi-Fiと開いた時点の現在地での判定は続ける
+        // eslint-disable-next-line no-console
+        console.warn("[wifiOnly] ジオフェンスを再登録できませんでした", err);
+      }
+    }
+  }
+  await addDiagLog("mode_change", { wifiOnly: enabled });
   await reportAutoStatus("wifi");
 }
 

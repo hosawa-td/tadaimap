@@ -81,6 +81,20 @@ export function judgeAutoStatus(input: {
   return distanceM <= homeRadiusM ? "home" : "nearby";
 }
 
+/**
+ * 位置情報を使わず、Wi-Fiの接続状況だけから3段階のステータスを判定する(F27)。
+ * - 自宅のWi-Fiに接続中 → 在宅
+ * - 登録した別の部屋のWi-Fiに接続中 → 施設内
+ * - 接続していない・登録外のWi-Fiに接続中 → 外出
+ * - Wi-Fiがオフ・Wi-Fi名が読めない・Wi-Fi未登録 → 判断できないためnull(ステータスを変更しない)
+ */
+export function judgeWifiOnly(wifi: WifiMatch): PresenceStatus | null {
+  if (wifi === "home") return "home";
+  if (wifi === "room") return "nearby";
+  if (wifi === "other") return "away";
+  return null;
+}
+
 /** ジオフェンス(自宅・建物の2つの範囲)の出入りイベント。 */
 export interface GeofenceEvent {
   regionId: "home" | "building";

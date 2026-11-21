@@ -120,6 +120,17 @@ export class ApiClient {
     });
   }
 
+  /** 端末側の動作ログ(自動判定の記録など)をサーバーへ送る。1回200件まで。 */
+  uploadLogs(
+    memberId: string,
+    entries: { at: string; event: string; detail: string }[]
+  ): Promise<{ ok: true; saved: number }> {
+    return this.request(`/members/${memberId}/logs`, {
+      method: "POST",
+      body: { deviceId: this.deviceId, entries },
+    });
+  }
+
   updateProfile(memberId: string, fields: { name?: string; showName?: boolean }): Promise<{ ok: true }> {
     return this.request(`/members/${memberId}/profile`, {
       method: "PATCH",

@@ -32,6 +32,8 @@ export default function SettingsScreen() {
     homeWifiSupported,
     strictHomeWifi,
     changeStrictHomeWifi,
+    wifiOnlyMode,
+    changeWifiOnlyMode,
     amIAdmin,
     inviteCode,
     groupId,
@@ -116,6 +118,14 @@ export default function SettingsScreen() {
       await changeStrictHomeWifi(value);
     } catch {
       Alert.alert("エラー", "設定の変更に失敗しました");
+    }
+  };
+
+  const handleToggleWifiOnlyMode = async (value: boolean) => {
+    try {
+      await changeWifiOnlyMode(value);
+    } catch (err) {
+      Alert.alert("設定を変更できませんでした", err instanceof Error ? err.message : "設定の変更に失敗しました");
     }
   };
 
@@ -331,6 +341,17 @@ export default function SettingsScreen() {
                   </Text>
                 </View>
                 <Switch value={strictHomeWifi} onValueChange={handleToggleStrictHomeWifi} />
+              </View>
+            )}
+            {homeWifis.length > 0 && (
+              <View style={styles.row}>
+                <View style={styles.rowTextBlock}>
+                  <Text style={styles.rowTitle}>Wi-Fiだけで判定する（位置情報を使わない）</Text>
+                  <Text style={styles.rowSub}>
+                    オンにすると、現在地は使わず、Wi-Fiの接続だけで判定します。自宅のWi-Fiにつながっていれば「在宅」、つながっていなければ「外出中」です（別の部屋のWi-Fiは「{nearbyLabel}」）。Wi-Fiの切断は約15分ごとの確認で気づくため、反映まで最大15分ほどかかります。端末のWi-Fiをオフにしている間は判定できず、状態は変わりません
+                  </Text>
+                </View>
+                <Switch value={wifiOnlyMode} onValueChange={handleToggleWifiOnlyMode} />
               </View>
             )}
           </View>

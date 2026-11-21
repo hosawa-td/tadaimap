@@ -16,6 +16,7 @@ import {
   loadHomeGeofenceConfig,
   loadRegisteredWifis,
   loadStrictHomeWifi,
+  loadWifiOnlyMode,
   loadMemberships,
   Membership,
   RegisteredWifi,
@@ -36,6 +37,7 @@ import {
   removeRegisteredWifi,
   rememberStatus,
   setStrictHomeWifi,
+  setWifiOnlyMode,
   startHomeGeofence,
   stopHomeGeofence,
 } from "../location";
@@ -58,6 +60,8 @@ interface AppContextValue {
   registeredWifis: RegisteredWifi[];
   /** 自宅Wi-Fiにつながっているときだけ在宅にする設定(別の階・別の部屋との区別用)。 */
   strictHomeWifi: boolean;
+  /** 位置情報を使わず、Wi-Fiの接続だけで判定するモード(F27)。 */
+  wifiOnlyMode: boolean;
   /** この端末で自宅Wi-Fiの判定が使えるか(Android版のみ)。 */
   homeWifiSupported: boolean;
   amIAdmin: boolean;
@@ -81,6 +85,7 @@ interface AppContextValue {
   addWifi: (kind: WifiKind) => Promise<void>;
   removeWifi: (ssid: string) => Promise<void>;
   changeStrictHomeWifi: (enabled: boolean) => Promise<void>;
+  changeWifiOnlyMode: (enabled: boolean) => Promise<void>;
   setStatus: (status: PresenceStatus, source: "auto" | "manual") => Promise<void>;
   setMemberStatus: (targetMemberId: string, status: PresenceStatus) => Promise<void>;
   saveProfile: (fields: { name?: string; showName?: boolean }) => Promise<void>;
@@ -110,6 +115,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [nearbyLabel, setNearbyLabelState] = useState(NEARBY_LABEL_DEFAULT);
   const [registeredWifis, setRegisteredWifis] = useState<RegisteredWifi[]>([]);
   const [strictHomeWifi, setStrictHomeWifiState] = useState(false);
+  const [wifiOnlyMode, setWifiOnlyModeState] = useState(false);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [members, setMembers] = useState<MemberView[]>([]);
   const [memberships, setMemberships] = useState<Membership[]>([]);
@@ -173,6 +179,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       setRegisteredWifis(await loadRegisteredWifis());
       setStrictHomeWifiState(await loadStrictHomeWifi());
+      setWifiOnlyModeState(await loadWifiOnlyMode());
       try {
         await syncMembershipsWithServer(new ApiClient(API_BASE_URL, id));
       } catch {
@@ -383,7 +390,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await withLoading(async () => {
         const next = await removeRegisteredWifi(ssid);
         setRegisteredWifis(next);
-        if (!next.some((w) => w.kind === "home")) setStrictHomeWifiState(false);
+        if (!next.some((w) => w.kind === "home")) {
+          setStrictHomeWifiState(false);
+          setWifiOnlyModeState(false);
+        }
+        await refreshMembers();
+      });
+    },
+    [withLoading, refreshMembers]
+  );
+
+  const changeWifiOnlyMode = useCallback(
+    async (enabled: boolean) => {
+      await withLoading(async () => {
+        await setWifiOnlyMode(enabled);
+        setWifiOnlyModeState(enabled);
+        // 切り替えと同時に自動判定が走り、自分のステータスが変わることがあるため一覧も取り直す
         await refreshMembers();
       });
     },
@@ -538,6 +560,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await clearAllMemberships();
       setRegisteredWifis([]);
       setStrictHomeWifiState(false);
+      setWifiOnlyModeState(false);
       setGroupId(null);
       setMemberId(null);
       setMyName("");
@@ -589,6 +612,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     nearbyLabel,
     registeredWifis,
     strictHomeWifi,
+    wifiOnlyMode,
     homeWifiSupported: isHomeWifiSupported(),
     amIAdmin,
     inviteCode,
@@ -605,6 +629,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addWifi,
     removeWifi,
     changeStrictHomeWifi,
+    changeWifiOnlyMode,
     setStatus,
     setMemberStatus,
     saveProfile,

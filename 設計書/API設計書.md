@@ -125,6 +125,7 @@ APIサーバーが提供するエンドポイント一覧。すべてスプレ�
 - レスポンス：`{ "ok": true, "saved": number }`（`event`が空の要素は無視される）
 - 権限：`deviceId`が対象メンバー本人のものであること（それ以外は`403 FORBIDDEN`、メンバー不在は`404 NOT_FOUND`）
 - 処理：`Logs`シートへ`origin="client"`で追記する。`event`は40文字、`detail`は500文字まで。`at`が不正な場合はサーバー受信時刻で代用する。
+- 送信元：Web版（接続状況）と、v1.4.7以降のAndroidアプリ（自動判定の動作ログ。`event`は`auto_check`・`task_error`・`mode_change`）。詳細は`機能設計書.md`のF26を参照。
 
 ### 18. `GET /diag/logs` — 接続状況ログの閲覧（解析用・F26）
 

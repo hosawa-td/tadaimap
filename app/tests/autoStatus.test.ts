@@ -3,6 +3,7 @@ import {
   distanceMeters,
   judgeAutoStatus,
   judgeFromGeofenceEvent,
+  judgeWifiOnly,
   shouldSendStatus,
 } from "../src/autoStatus";
 
@@ -193,5 +194,27 @@ describe("shouldSendStatus(サーバー上の状態と比べて送るかどう�
 
   it("判定できなかった(null)なら送らない", () => {
     expect(shouldSendStatus(null, "away")).toBe(false);
+  });
+});
+
+describe("judgeWifiOnly(位置情報を使わない判定)", () => {
+  it("自宅Wi-Fiに接続中なら在宅", () => {
+    expect(judgeWifiOnly("home")).toBe("home");
+  });
+
+  it("別の部屋のWi-Fiなら施設内", () => {
+    expect(judgeWifiOnly("room")).toBe("nearby");
+  });
+
+  it("自宅Wi-Fiにつながっていない(切断・登録外のWi-Fi)なら外出", () => {
+    expect(judgeWifiOnly("other")).toBe("away");
+    // 切断された状態は、自宅Wi-Fi登録済みなら other に分類される
+    expect(judgeWifiOnly(classifyWifi({ enabled: true, connected: false, ssid: null }, homeOnly))).toBe("away");
+  });
+
+  it("Wi-Fiがオフ・名前が読めない・未登録のときは判断せず、状態を変えない", () => {
+    expect(judgeWifiOnly("unknown")).toBeNull();
+    expect(judgeWifiOnly("none")).toBeNull();
+    expect(judgeWifiOnly(classifyWifi({ enabled: false, connected: false, ssid: null }, homeOnly))).toBeNull();
   });
 });
