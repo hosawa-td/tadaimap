@@ -133,6 +133,21 @@ APIサーバーが提供するエンドポイント一覧。すべてスプレ�
 - レスポンス：`{ "count": number, "logs": [{ at, receivedAt, memberId, deviceId, origin, event, detail }] }`（新しい順）
 - 権限：`DIAG_TOKEN`が未設定、または値が一致しない場合は`403 FORBIDDEN`（未設定なら機能は無効）
 
+### 19. `GET /cron/rotate-logs` — 接続状況ログのローテート保存（F26）
+
+- 呼び出し元：Vercelの定期実行（Cron。`server/vercel.json`の`0 15 * * *`＝日本時間の毎日0:00。無料プランでは0:00〜0:59にずれる）。手動でも呼べる。
+- リクエスト：認証は次のどちらか。①`Authorization: Bearer <環境変数CRON_SECRET>`（Vercel Cronが自動で付ける） ②`DIAG_TOKEN`と同じ値（クエリ`token`またはヘッダー`x-diag-token`。手動実行用）。任意で`dryRun=1`（何も変えず、結果の見込みだけを返す）
+- レスポンス：`{ "ok": true, "tab": "log_YYYYMMDD", "saved": number, "clearedRows": number, "deletedTabs": string[], "dryRun": boolean }`（`saved`＝保存した件数、`clearedRows`＝`Logs`から消した行数、`deletedTabs`＝削除した古い保存シート名）
+- 権限：`CRON_SECRET`・`DIAG_TOKEN`のどちらも未設定、または値が一致しない場合は`403 FORBIDDEN`（未設定なら機能は無効）
+- 処理：`Logs`のログを`log_YYYYMMDD`（実行日・日本時間）シートへ移し、書き込みを確認できてから`Logs`の読み取った行を消す。実行日を含む7日より前の`log_YYYYMMDD`シートを削除する（それ以外のシートには触れない）。同じ日の再実行は、同じシートに追記する。
+
+### 20. `GET /members/:memberId/logs` — メンバーのログの閲覧（管理者のみ・F28）
+
+- リクエスト：ヘッダー`x-device-id`に、閲覧する管理者本人の端末ID。任意で`limit`（既定1000、最大3000）
+- レスポンス：`{ "logs": [{ "at": ISO8601, "origin": "client" | "server", "event": string, "detail": string }] }`（新しい順）。**`deviceId`は含めない**（本人確認に使う値のため）
+- 権限：リクエストした端末が、対象メンバーと**同じグループの管理者**であること（それ以外は`403 FORBIDDEN`、端末IDが無い場合は`400 VALIDATION_ERROR`、対象メンバーが存在しない場合は`404 NOT_FOUND`）。管理者は自分のログも見られる
+- 処理：現在の`Logs`シートと、ローテート保存済みの`log_YYYYMMDD`シート（直近7日分。F26）から、対象メンバーのログを集めて返す。なお、同じパスの`POST /members/:memberId/logs`（17番）は、端末のログをアップロードするもの
+
 ## Web版の配信について
 
 上記に加え、APIサーバーは`express.static`により`server/public/`配下（`index.html`・`sw.js`・`manifest.json`・アイコン画像）を静的配信する。これらはJSON APIではなく、Web版（F14）のブラウザ画面・Service Worker本体・PWAメタデータである。

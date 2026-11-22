@@ -382,6 +382,57 @@ export function createApp(
     })
   );
 
+  // F28: メンバーのログ(状態の履歴＋技術的なログ)の閲覧。そのメンバーと同じグループの管理者だけが見られる。
+  // 現在の「Logs」と、ローテート保存済み(直近7日分)の両方から、新しい順に返す。
+  // 端末ID(device_id)は本人確認に使う値なので、他人には返さない。
+  app.get(
+    "/members/:memberId/logs",
+    asyncHandler(async (req, res) => {
+      const deviceId = getDeviceId(req);
+      const { memberId } = req.params;
+      if (!isValidDeviceId(deviceId)) {
+        throw new AppError("VALIDATION_ERROR", "device_idは必須です");
+      }
+      const target = await repository.getMemberById(memberId);
+      if (!target) {
+        throw new AppError("NOT_FOUND", "メンバーが見つかりません");
+      }
+      const requester = await repository.getMemberByGroupAndDevice(target.groupId, deviceId as string);
+      const groupMembers = await repository.getMembersByGroup(target.groupId);
+      if (!requester || !isEffectiveAdmin(requester, groupMembers)) {
+        throw new AppError("FORBIDDEN", "ログを閲覧する権限がありません");
+      }
+      const limit = Math.min(Math.max(Number(req.query.limit) || 1000, 1), 3000);
+      const history = await repository.getMemberHistory(memberId, limit);
+      res.status(200).json({
+        logs: history.map((l) => ({ at: l.at, origin: l.origin, event: l.event, detail: l.detail })),
+      });
+    })
+  );
+
+  // ログのローテート保存(F26): 毎日0:00(日本時間)にVercelの定期実行(Cron)が呼び出す。
+  // 「Logs」のログを「log_YYYYMMDD」シートへ移して「Logs」を空にし、7日より前の「log_YYYYMMDD」を削除する。
+  // 認証: Vercel Cronが付ける「Authorization: Bearer <環境変数CRON_SECRET>」、または手動実行用の
+  // DIAG_TOKEN(?token=… または x-diag-token ヘッダー)。どちらも未設定なら無効。
+  // ?dryRun=1 を付けると、何も変えずに結果の見込みだけを返す。
+  app.get(
+    "/cron/rotate-logs",
+    asyncHandler(async (req, res) => {
+      const cronSecret = process.env.CRON_SECRET;
+      const diagToken = process.env.DIAG_TOKEN;
+      const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "");
+      const token = (req.query.token as string | undefined) ?? req.header("x-diag-token");
+      const authorized =
+        (!!cronSecret && bearer === cronSecret) || (!!diagToken && token === diagToken);
+      if (!authorized) {
+        throw new AppError("FORBIDDEN", "ログのローテートを実行する権限がありません");
+      }
+      const dryRun = req.query.dryRun === "1" || req.query.dryRun === "true";
+      const result = await repository.rotateLogs(new Date(), dryRun);
+      res.status(200).json({ ok: true, ...result });
+    })
+  );
+
   // F7: 名前・表示設定の変更
   app.patch(
     "/members/:memberId/profile",

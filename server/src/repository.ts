@@ -1,4 +1,5 @@
 import { Group, LogEntry, Member, PresenceStatus } from "./types";
+import { RotateLogsResult } from "./logRotation";
 
 export interface Repository {
   createGroup(deviceId: string, name: string): Promise<{ group: Group; member: Member }>;
@@ -84,6 +85,18 @@ export interface Repository {
 
   /** 解析用ログを新しい順に取得する。memberIdを指定するとそのメンバー分だけに絞る。 */
   getLogs(options: { memberId?: string; limit: number }): Promise<LogEntry[]>;
+
+  /**
+   * 指定メンバーのログを、現在の「Logs」と、ローテートで保存した「log_YYYYMMDD」(直近7日分)の両方から集め、
+   * 新しい順に返す(F28)。
+   */
+  getMemberHistory(memberId: string, limit: number): Promise<LogEntry[]>;
+
+  /**
+   * ログのローテート保存。「Logs」のログを、実行日(日本時間)の保存先「log_YYYYMMDD」へ移して「Logs」を空にし、
+   * 7日より前の「log_YYYYMMDD」を削除する。dryRunがtrueなら、何も変えずに結果の見込みだけを返す。
+   */
+  rotateLogs(now: Date, dryRun: boolean): Promise<RotateLogsResult>;
 }
 
 /**

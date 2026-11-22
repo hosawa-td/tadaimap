@@ -15,6 +15,7 @@ import HomeScreen from "./src/screens/HomeScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import PrivacyPolicyScreen from "./src/screens/PrivacyPolicyScreen";
 import LaunchScreen from "./src/screens/LaunchScreen";
+import MemberLogsScreen from "./src/screens/MemberLogsScreen";
 import { colors } from "./src/theme/tokens";
 
 export type RootStackParamList = {
@@ -24,6 +25,7 @@ export type RootStackParamList = {
   RegisterHome: { fromSettings?: boolean } | undefined;
   Main: undefined;
   PrivacyPolicy: undefined;
+  MemberLogs: { memberId: string; name: string };
 };
 
 export type MainTabParamList = {
@@ -93,6 +95,11 @@ function RootNavigator() {
         name="PrivacyPolicy"
         component={PrivacyPolicyScreen}
         options={{ headerShown: true, title: "プライバシーポリシー" }}
+      />
+      <RootStack.Screen
+        name="MemberLogs"
+        component={MemberLogsScreen}
+        options={{ headerShown: true, title: "ログ" }}
       />
     </RootStack.Navigator>
   );

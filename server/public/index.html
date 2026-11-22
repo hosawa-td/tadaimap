@@ -96,6 +96,20 @@
   .status.nearby{background:var(--nearby-soft);color:var(--nearby-text);border:1.5px solid var(--nearby);}
   .status.away{background:var(--surface);color:var(--away);border:1.5px dashed var(--away);}
   .card.clickable{cursor:pointer;}
+  .logs-card{max-height:88vh;display:flex;flex-direction:column;padding-bottom:calc(16px + env(safe-area-inset-bottom, 0px));}
+  .logs-filter{display:flex;gap:8px;margin:0 0 10px;}
+  .logs-filter button{padding:8px 14px;border-radius:100px;border:1.5px solid var(--border);background:var(--surface);font-size:12.5px;font-weight:700;color:var(--text-muted);cursor:pointer;}
+  .logs-filter button.active{background:var(--primary);border-color:var(--primary);color:var(--on-primary);}
+  .logs-list{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;margin:0 -20px;}
+  .logs-day{position:sticky;top:0;background:var(--surface-sand);font-size:12.5px;font-weight:700;padding:5px 20px;}
+  .logs-row{display:flex;gap:10px;padding:8px 20px;border-bottom:1px solid var(--border);}
+  .logs-row.technical{background:var(--background);}
+  .logs-time{flex:none;width:62px;font-size:12px;color:var(--text-faint);font-variant-numeric:tabular-nums;}
+  .logs-body{flex:1;min-width:0;}
+  .logs-title{font-size:14px;font-weight:700;}
+  .logs-row.technical .logs-title{font-size:12.5px;font-weight:600;color:var(--text-muted);}
+  .logs-note{font-size:11.5px;color:var(--text-muted);margin-top:2px;line-height:1.5;word-break:break-all;}
+  .logs-empty{text-align:center;color:var(--text-faint);font-size:13px;padding:28px 20px;}
   .status-switch{display:flex;gap:8px;margin:18px 0 6px;}
   .status-switch button{flex:1;padding:12px 6px;border-radius:100px;border:1.5px solid var(--border);background:var(--surface);font-size:13px;font-weight:700;color:var(--text-muted);cursor:pointer;}
   .status-switch button.active-home{border:2.5px solid var(--home);color:#fff;background:var(--home);}
@@ -169,7 +183,7 @@
     </div>
 
     <div id="member-list" style="margin-top:18px;"></div>
-    <p class="hint" id="admin-hint" style="text-align:center;" hidden>管理者として、家族の名前をタップすると代わりに状態を変更できます</p>
+    <p class="hint" id="admin-hint" style="text-align:center;" hidden>管理者として、家族をタップすると、ログの確認や代わりの状態変更ができます</p>
 
     <div class="section-title">設定</div>
     <div class="settings-card">
@@ -312,11 +326,25 @@
     <div class="modal-card">
       <p class="modal-title" id="status-modal-title">状態を変更</p>
       <p class="modal-sub">管理者として、この家族の状態を代わりに変更できます。</p>
+      <button type="button" class="modal-btn" id="status-modal-logs">ログを見る</button>
       <button type="button" class="modal-btn" data-status="home">在宅にする</button>
       <button type="button" class="modal-btn" id="status-modal-nearby" data-status="nearby">施設内にする</button>
       <button type="button" class="modal-btn" data-status="away">外出中にする</button>
       <button type="button" class="modal-btn" id="status-modal-remove" style="color:var(--danger);">このメンバーを削除する</button>
       <button type="button" class="modal-btn modal-cancel" id="status-modal-cancel">キャンセル</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="logs-modal" hidden>
+    <div class="modal-card logs-card">
+      <p class="modal-title" id="logs-modal-title">ログ</p>
+      <p class="modal-sub">現在のログと、直近7日分の保存ログを、新しい順に表示します（日本時間）。</p>
+      <div class="logs-filter">
+        <button type="button" class="active" data-filter="all">すべて</button>
+        <button type="button" data-filter="status">状態の変化のみ</button>
+      </div>
+      <div class="logs-list" id="logs-list"></div>
+      <button type="button" class="modal-btn modal-cancel" id="logs-modal-close">閉じる</button>
     </div>
   </div>
 </div>
@@ -748,7 +776,7 @@
     ordered.forEach(function (m, index) {
       if (m.status === "home") home++;
       var card = document.createElement("div");
-      var clickable = amIAdmin && !m.isMe;
+      var clickable = amIAdmin;
       card.className = "card" + (clickable ? " clickable" : "");
       card.__memberId = m.memberId;
       var initial = m.nameOrAnonymous.slice(0, 1);
@@ -767,7 +795,8 @@
       if (clickable) {
         card.addEventListener("click", function (e) {
           if (e.target.closest(".drag-handle")) return;
-          openStatusModal(m);
+          if (m.isMe) openLogsModal(m);
+          else openStatusModal(m);
         });
       }
       list.appendChild(card);
@@ -1137,6 +1166,191 @@
       .catch(function (err) {
         showToast(err.message);
       });
+  });
+
+  // ---------- 管理者によるメンバーのログ閲覧(F28) ----------
+  var LOG_WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+  var LOG_SOURCE = { auto: "自動", manual: "手動" };
+  var LOG_TRIGGER = {
+    geofence: "位置の出入り", wifi: "Wi-Fi接続", periodic: "定期確認", foreground: "アプリを開いた",
+    wifi_connect: "Wi-Fi接続(ショートカット)", wifi_disconnect: "Wi-Fi切断(ショートカット)",
+  };
+  var LOG_WIFI = { home: "自宅", room: "別の部屋", other: "他のWi-Fi・未接続", unknown: "不明", none: "未登録" };
+  var LOG_POS = { fresh: "取得", lastKnown: "直近の記録", none: "取得できず", skipped: "取得せず" };
+  var LOG_SENT = { ok: "送信", same: "変更なし", error: "失敗" };
+  var LOG_IGNORE = { same_status: "すでに同じ状態", duplicate: "直前の重複", flip_flop: "直前の変更から60秒以内の外出" };
+
+  function logJst(iso) {
+    var ms = Date.parse(iso);
+    if (!isFinite(ms)) return { date: "日時不明", time: "" };
+    var d = new Date(ms + 9 * 3600 * 1000);
+    function p(n) { return (n < 10 ? "0" : "") + n; }
+    return {
+      date: d.getUTCFullYear() + "/" + p(d.getUTCMonth() + 1) + "/" + p(d.getUTCDate()) + "(" + LOG_WEEKDAYS[d.getUTCDay()] + ")",
+      time: p(d.getUTCHours()) + ":" + p(d.getUTCMinutes()) + ":" + p(d.getUTCSeconds()),
+    };
+  }
+
+  function logStatusName(v, nearbyLabel) {
+    return v === "home" ? "在宅" : v === "nearby" ? nearbyLabel : v === "away" ? "外出中" : "不明";
+  }
+
+  function logElapsed(sec) {
+    if (sec < 60) return sec + "秒";
+    if (sec < 3600) return Math.floor(sec / 60) + "分";
+    var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+    return m > 0 ? h + "時間" + m + "分" : h + "時間";
+  }
+
+  function logJoin(parts, sep) {
+    return parts.filter(function (x) { return !!x; }).join(sep);
+  }
+
+  /** ログ1件を、画面に出す文章にする(アプリ版 memberLogs.ts と同じ内容)。 */
+  function describeLog(entry, nearbyLabel) {
+    var t = logJst(entry.at);
+    var base = { at: entry.at, date: t.date, time: t.time };
+    var d = null;
+    try { d = JSON.parse(entry.detail); } catch (e) { d = null; }
+    if (!d || typeof d !== "object" || Array.isArray(d)) d = null;
+
+    if (entry.event === "status_change" && d) {
+      return Object.assign(base, {
+        kind: "status",
+        title: logStatusName(d.from, nearbyLabel) + " → " + logStatusName(d.to, nearbyLabel),
+        note: logJoin([
+          d.byAdmin === true ? "管理者による変更" : (d.source ? (LOG_SOURCE[d.source] || d.source) : ""),
+          d.trigger ? (LOG_TRIGGER[d.trigger] || d.trigger) : "",
+          typeof d.sinceLastChangeSec === "number" ? "前回の変更から" + logElapsed(d.sinceLastChangeSec) : "",
+        ], " ・ "),
+      });
+    }
+    if (entry.event === "status_ignored" && d) {
+      return Object.assign(base, {
+        kind: "status",
+        title: "無視：" + logStatusName(d.to, nearbyLabel) + "への自動更新",
+        note: logJoin([
+          "理由：" + (d.reason ? (LOG_IGNORE[d.reason] || d.reason) : "不明"),
+          d.trigger ? (LOG_TRIGGER[d.trigger] || d.trigger) : "",
+        ], " ・ "),
+      });
+    }
+    if (entry.event === "auto_check" && d) {
+      return Object.assign(base, {
+        kind: "technical",
+        title: "自動判定（" + (d.trigger ? (LOG_TRIGGER[d.trigger] || d.trigger) : "不明") + "・" + (d.mode === "wifi_only" ? "Wi-Fiのみ" : "位置情報あり") + "）",
+        note: logJoin([
+          "Wi-Fi：" + (d.wifi ? (LOG_WIFI[d.wifi] || d.wifi) : "不明") + (d.wifiOn === false ? "（端末のWi-Fiはオフ）" : ""),
+          d.pos ? "位置：" + (LOG_POS[d.pos] || d.pos) + (typeof d.distM === "number" ? "(" + d.distM + "m)" : "") : "",
+          d.geo ? "範囲の出入り：" + d.geo : "",
+          "判定：" + (d.judged && d.judged !== "none" ? logStatusName(d.judged, nearbyLabel) : "判断できず"),
+          d.sent ? "結果：" + (LOG_SENT[d.sent] || d.sent) : "",
+          d.err ? "エラー：" + d.err : "",
+        ], " ／ "),
+      });
+    }
+    return Object.assign(base, {
+      kind: "technical",
+      title: entry.event,
+      note: entry.detail && entry.detail.length > 200 ? entry.detail.slice(0, 200) + "…" : (entry.detail || ""),
+    });
+  }
+
+  var logsModalState = { logs: [], nearbyLabel: "施設内", filter: "all" };
+
+  // ログの文字列は、画面を壊したり悪用されたりしないよう、必ず textContent で表示する
+  function renderLogs() {
+    var list = el("logs-list");
+    list.innerHTML = "";
+    var sorted = logsModalState.logs.slice().sort(function (a, b) { return Date.parse(b.at) - Date.parse(a.at); });
+    var lastDate = null;
+    var count = 0;
+    sorted.forEach(function (entry) {
+      var d = describeLog(entry, logsModalState.nearbyLabel);
+      if (logsModalState.filter === "status" && d.kind !== "status") return;
+      if (d.date !== lastDate) {
+        var head = document.createElement("div");
+        head.className = "logs-day";
+        head.textContent = d.date;
+        list.appendChild(head);
+        lastDate = d.date;
+      }
+      var row = document.createElement("div");
+      row.className = "logs-row" + (d.kind === "technical" ? " technical" : "");
+      var time = document.createElement("div");
+      time.className = "logs-time";
+      time.textContent = d.time;
+      var body = document.createElement("div");
+      body.className = "logs-body";
+      var title = document.createElement("div");
+      title.className = "logs-title";
+      title.textContent = d.title;
+      body.appendChild(title);
+      if (d.note) {
+        var note = document.createElement("div");
+        note.className = "logs-note";
+        note.textContent = d.note;
+        body.appendChild(note);
+      }
+      row.appendChild(time);
+      row.appendChild(body);
+      list.appendChild(row);
+      count++;
+    });
+    if (count === 0) {
+      var empty = document.createElement("div");
+      empty.className = "logs-empty";
+      empty.textContent = "表示できるログがありません";
+      list.appendChild(empty);
+    }
+  }
+
+  function openLogsModal(member) {
+    logsModalState = { logs: [], nearbyLabel: member.nearbyLabel || "施設内", filter: "all" };
+    el("logs-modal-title").textContent = member.nameOrAnonymous + "さんのログ";
+    Array.prototype.forEach.call(el("logs-modal").querySelectorAll(".logs-filter button"), function (b) {
+      b.classList.toggle("active", b.dataset.filter === "all");
+    });
+    var list = el("logs-list");
+    list.innerHTML = "";
+    var loading = document.createElement("div");
+    loading.className = "logs-empty";
+    loading.textContent = "読み込み中…";
+    list.appendChild(loading);
+    el("logs-modal").hidden = false;
+    api("/members/" + member.memberId + "/logs")
+      .then(function (result) {
+        logsModalState.logs = result.logs || [];
+        renderLogs();
+      })
+      .catch(function (err) {
+        list.innerHTML = "";
+        var e = document.createElement("div");
+        e.className = "logs-empty";
+        e.style.color = "var(--danger)";
+        e.textContent = err.message;
+        list.appendChild(e);
+      });
+  }
+
+  el("logs-modal-close").addEventListener("click", function () { el("logs-modal").hidden = true; });
+  el("logs-modal").addEventListener("click", function (e) {
+    if (e.target === el("logs-modal")) el("logs-modal").hidden = true;
+  });
+  Array.prototype.forEach.call(el("logs-modal").querySelectorAll(".logs-filter button"), function (btn) {
+    btn.addEventListener("click", function () {
+      logsModalState.filter = btn.dataset.filter;
+      Array.prototype.forEach.call(el("logs-modal").querySelectorAll(".logs-filter button"), function (b) {
+        b.classList.toggle("active", b === btn);
+      });
+      renderLogs();
+    });
+  });
+  el("status-modal-logs").addEventListener("click", function () {
+    if (!statusModalTarget) return;
+    var target = statusModalTarget;
+    closeStatusModal();
+    openLogsModal(target);
   });
 
   var settingsName = el("settings-name");

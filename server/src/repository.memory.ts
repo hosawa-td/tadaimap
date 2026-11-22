@@ -7,6 +7,7 @@ import {
   inviteCodeExpiryFrom,
 } from "./repository";
 import { Group, LogEntry, Member, PresenceStatus } from "./types";
+import { archiveTabName, archiveTabsToDelete, RotateLogsResult } from "./logRotation";
 import { NEARBY_LABEL_DEFAULT } from "./validation";
 
 /**
@@ -321,6 +322,28 @@ export class MemoryRepository implements Repository {
       ? this.logs.filter((l) => l.memberId === options.memberId)
       : this.logs;
     return [...filtered].reverse().slice(0, options.limit);
+  }
+
+  async getMemberHistory(memberId: string, limit: number): Promise<LogEntry[]> {
+    const all = [...this.logArchives.values()].flat().concat(this.logs);
+    return all
+      .filter((l) => l.memberId === memberId)
+      .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+      .slice(0, limit);
+  }
+
+  /** ローテート保存先(log_YYYYMMDD)の中身。テストで確認するために公開している。 */
+  readonly logArchives = new Map<string, LogEntry[]>();
+
+  async rotateLogs(now: Date, dryRun: boolean): Promise<RotateLogsResult> {
+    const tab = archiveTabName(now);
+    const sorted = [...this.logs].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+    const deletedTabs = archiveTabsToDelete([...this.logArchives.keys()], now);
+    if (dryRun) return { tab, saved: sorted.length, clearedRows: 0, deletedTabs, dryRun };
+    this.logArchives.set(tab, [...(this.logArchives.get(tab) ?? []), ...sorted]);
+    this.logs = [];
+    for (const name of deletedTabs) this.logArchives.delete(name);
+    return { tab, saved: sorted.length, clearedRows: sorted.length, deletedTabs, dryRun };
   }
 
   private issueUniqueInviteCode(): string {

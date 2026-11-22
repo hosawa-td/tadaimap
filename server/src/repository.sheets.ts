@@ -7,6 +7,7 @@ import {
   inviteCodeExpiryFrom,
 } from "./repository";
 import { Group, LogEntry, Member, PresenceStatus } from "./types";
+import { archiveTabName, archiveTabsToDelete, isArchiveTabName, RotateLogsResult, sortLogRows } from "./logRotation";
 import { NEARBY_LABEL_DEFAULT } from "./validation";
 
 const GROUPS_SHEET = "Groups";
@@ -209,6 +210,120 @@ export class SheetsRepository implements Repository {
       }))
       .filter((e) => !options.memberId || e.memberId === options.memberId);
     return entries.reverse().slice(0, options.limit);
+  }
+
+  async getMemberHistory(memberId: string, limit: number): Promise<LogEntry[]> {
+    // 「Logs」と、保存済みの「log_YYYYMMDD」をまとめて1回で読む
+    let titles: string[];
+    try {
+      const meta = await this.sheetsApi.spreadsheets.get({
+        spreadsheetId: this.spreadsheetId,
+        fields: "sheets.properties(title)",
+      });
+      titles = (meta.data.sheets ?? []).map((s) => s.properties?.title ?? "");
+    } catch (err) {
+      return [];
+    }
+    const targets = titles.filter((t) => t === LOGS_SHEET || isArchiveTabName(t));
+    if (targets.length === 0) return [];
+    const res = await this.sheetsApi.spreadsheets.values.batchGet({
+      spreadsheetId: this.spreadsheetId,
+      ranges: targets.map((t) => `${t}!A:G`),
+    });
+    const entries: LogEntry[] = [];
+    for (const range of res.data.valueRanges ?? []) {
+      for (const r of ((range.values as string[][]) ?? []).slice(1)) {
+        // 各シートの1行目は見出し
+        if (!r[0] || r[2] !== memberId) continue;
+        entries.push({
+          at: r[0],
+          receivedAt: r[1] ?? "",
+          memberId: r[2] ?? "",
+          deviceId: r[3] ?? "",
+          origin: (r[4] === "server" ? "server" : "client") as "client" | "server",
+          event: r[5] ?? "",
+          detail: r[6] ?? "",
+        });
+      }
+    }
+    return entries.sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, limit);
+  }
+
+  async rotateLogs(now: Date, dryRun: boolean): Promise<RotateLogsResult> {
+    const tab = archiveTabName(now);
+    let rows: string[][];
+    try {
+      rows = await this.readSheet(LOGS_SHEET);
+    } catch (err) {
+      return { tab, saved: 0, clearedRows: 0, deletedTabs: [], dryRun };
+    }
+    const body = rows.slice(1); // 1行目は見出し
+    const sorted = sortLogRows(body);
+
+    const meta = await this.sheetsApi.spreadsheets.get({
+      spreadsheetId: this.spreadsheetId,
+      fields: "sheets.properties(sheetId,title)",
+    });
+    const sheetList = (meta.data.sheets ?? []).map((s) => s.properties).filter((p) => !!p);
+    const deletedTabs = archiveTabsToDelete(
+      sheetList.map((p) => p?.title ?? ""),
+      now
+    );
+    if (dryRun) return { tab, saved: sorted.length, clearedRows: 0, deletedTabs, dryRun };
+
+    // 1. 保存先のシートが無ければ、見出しつきで作る(同じ日の再実行では、既存のシートに追記する)
+    if (!sheetList.some((p) => p?.title === tab)) {
+      await this.sheetsApi.spreadsheets.batchUpdate({
+        spreadsheetId: this.spreadsheetId,
+        requestBody: { requests: [{ addSheet: { properties: { title: tab } } }] },
+      });
+      await this.appendRow(tab, [...LOGS_COLUMNS]);
+    }
+
+    // 2. ログを保存先へ移す。書き込んだ行数を確認できてから、元のログを消す
+    if (sorted.length > 0) {
+      const before = (await this.readSheet(tab)).length;
+      await this.sheetsApi.spreadsheets.values.append({
+        spreadsheetId: this.spreadsheetId,
+        range: `${tab}!A:A`,
+        valueInputOption: "RAW",
+        requestBody: { values: sorted },
+      });
+      const after = (await this.readSheet(tab)).length;
+      if (after - before !== sorted.length) {
+        throw new Error(`${tab} への保存を確認できませんでした(期待 ${sorted.length} 行、実際 ${after - before} 行)。Logsは消していません`);
+      }
+    }
+
+    // 3. 読み取った行だけを消す(その後に追加されたログは、下に残る)
+    if (body.length > 0) {
+      const logsSheetId = sheetList.find((p) => p?.title === LOGS_SHEET)?.sheetId;
+      if (logsSheetId === undefined || logsSheetId === null) throw new Error(`${LOGS_SHEET} シートが見つかりません`);
+      await this.sheetsApi.spreadsheets.batchUpdate({
+        spreadsheetId: this.spreadsheetId,
+        requestBody: {
+          requests: [
+            {
+              deleteDimension: {
+                range: { sheetId: logsSheetId, dimension: "ROWS", startIndex: 1, endIndex: 1 + body.length },
+              },
+            },
+          ],
+        },
+      });
+    }
+
+    // 4. 7日より前の保存シートを削除する
+    const deleteRequests = sheetList
+      .filter((p) => p?.title && deletedTabs.includes(p.title) && p.sheetId !== undefined && p.sheetId !== null)
+      .map((p) => ({ deleteSheet: { sheetId: p?.sheetId as number } }));
+    if (deleteRequests.length > 0) {
+      await this.sheetsApi.spreadsheets.batchUpdate({
+        spreadsheetId: this.spreadsheetId,
+        requestBody: { requests: deleteRequests },
+      });
+    }
+    return { tab, saved: sorted.length, clearedRows: body.length, deletedTabs, dryRun };
   }
 
   private rowToGroup(row: string[]): Group {

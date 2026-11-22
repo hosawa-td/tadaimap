@@ -10,6 +10,7 @@ import { AppState } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ApiClient, MemberView, PresenceStatus } from "../api";
 import { getOrCreateDeviceId } from "../deviceId";
+import type { MemberLogEntry } from "../memberLogs";
 import {
   addMembership,
   clearAllMemberships,
@@ -98,6 +99,8 @@ interface AppContextValue {
   removeMember: (targetMemberId: string) => Promise<void>;
   /** 管理者がいまのグループそのものを削除する。 */
   deleteGroup: () => Promise<void>;
+  /** 管理者が、メンバーのログ(状態の履歴＋技術的なログ)を新しい順に取得する(F28)。 */
+  fetchMemberLogs: (targetMemberId: string) => Promise<MemberLogEntry[]>;
 }
 
 const AppContext = createContext<AppContextValue | undefined>(undefined);
@@ -596,6 +599,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, [api, groupId, withLoading, settleAfterLeavingCurrentGroup]);
 
+  const fetchMemberLogs = useCallback(
+    async (targetMemberId: string): Promise<MemberLogEntry[]> => {
+      if (!api) throw new Error("初期化中です");
+      return (await api.getMemberLogs(targetMemberId)).logs;
+    },
+    [api]
+  );
+
   const amIAdmin = members.find((m) => m.isMe)?.isAdmin ?? false;
 
   const value: AppContextValue = {
@@ -640,6 +651,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     leaveGroup,
     removeMember,
     deleteGroup,
+    fetchMemberLogs,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

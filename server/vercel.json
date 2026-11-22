@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/cron/rotate-logs",
+      "schedule": "0 15 * * *"
+    }
+  ]
+}

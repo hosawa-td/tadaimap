@@ -13,7 +13,9 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "../../App";
 import DraggableFlatList, { RenderItemParams } from "react-native-draggable-flatlist";
 import { TouchableOpacity as GHTouchableOpacity } from "react-native-gesture-handler";
 import { Ionicons } from "@expo/vector-icons";
@@ -60,6 +62,7 @@ export default function HomeScreen() {
     saveHomeDetail,
     removeMember,
   } = useApp();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [refreshing, setRefreshing] = useState(false);
   const [sending, setSending] = useState(false);
   const [homeDetailDraft, setHomeDetailDraft] = useState("");
@@ -271,7 +274,9 @@ export default function HomeScreen() {
         </View>
       )}
       {amIAdmin && (
-        <Text style={styles.adminHint}>管理者として、家族の名前を長押しすると代わりに状態を変更できます</Text>
+        <Text style={styles.adminHint}>
+          管理者として、家族をタップするとログを確認でき、長押しすると代わりに状態を変更できます
+        </Text>
       )}
 
       <DraggableFlatList
@@ -286,6 +291,11 @@ export default function HomeScreen() {
             isActive={isActive}
             onDrag={drag}
             onLongPress={amIAdmin && !item.isMe ? () => handleAdminChangeStatus(item) : undefined}
+            onPress={
+              amIAdmin
+                ? () => navigation.navigate("MemberLogs", { memberId: item.memberId, name: item.nameOrAnonymous })
+                : undefined
+            }
           />
         )}
         ListEmptyComponent={<Text style={styles.empty}>メンバー情報を読み込んでいます…</Text>}
@@ -331,21 +341,25 @@ const STATUS_STYLE: Record<
 function MemberRow({
   member,
   onLongPress,
+  onPress,
   onDrag,
   isActive,
 }: {
   member: MemberView;
   onLongPress?: () => void;
+  /** タップしたとき(管理者のみ。メンバーのログ画面を開く)。 */
+  onPress?: () => void;
   onDrag: () => void;
   isActive: boolean;
 }) {
-  const Wrapper = onLongPress ? TouchableOpacity : View;
+  const Wrapper = onLongPress || onPress ? TouchableOpacity : View;
   return (
     <Wrapper
       style={[styles.memberCard, isActive && styles.memberCardActive]}
       onLongPress={onLongPress}
+      onPress={onPress}
       delayLongPress={400}
-      {...(onLongPress ? { activeOpacity: 0.7 } : {})}
+      {...(onLongPress || onPress ? { activeOpacity: 0.7 } : {})}
     >
       <GHTouchableOpacity
         style={styles.dragHandle}

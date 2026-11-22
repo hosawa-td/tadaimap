@@ -120,6 +120,13 @@ export class ApiClient {
     });
   }
 
+  /** 管理者が、メンバーのログ(現在分＋ローテート保存済みの直近7日分)を新しい順に取得する(F28)。 */
+  getMemberLogs(
+    memberId: string
+  ): Promise<{ logs: { at: string; origin: "client" | "server"; event: string; detail: string }[] }> {
+    return this.request(`/members/${memberId}/logs`, { method: "GET" });
+  }
+
   /** 端末側の動作ログ(自動判定の記録など)をサーバーへ送る。1回200件まで。 */
   uploadLogs(
     memberId: string,
