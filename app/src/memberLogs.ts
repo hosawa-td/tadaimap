@@ -155,6 +155,7 @@ export function describeLog(entry: MemberLogEntry, nearbyLabel: string): Describ
           `Wi-Fi：${wifi ? WIFI_LABEL[wifi] ?? wifi : "不明"}${d.wifiOn === false ? "（端末のWi-Fiはオフ）" : ""}`,
           pos ? `位置：${POS_LABEL[pos] ?? pos}${dist}` : undefined,
           d.geo ? `範囲の出入り：${String(d.geo)}` : undefined,
+          d.nearbyGps === "off" ? "近くにいるGPS判定：オフ" : undefined,
           `判定：${judged && judged !== "none" ? statusName(judged, nearbyLabel) : "判断できず"}`,
           sent ? `結果：${SENT_LABEL[sent] ?? sent}` : undefined,
           str(d.err) ? `エラー：${str(d.err)}` : undefined,

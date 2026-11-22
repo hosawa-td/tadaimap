@@ -21,6 +21,7 @@ import {
   loadRegisteredWifis,
   loadStrictHomeWifi,
   loadWifiOnlyMode,
+  loadNearbyGpsEnabled,
   saveWifiOnlyMode,
   RegisteredWifi,
   saveRegisteredWifis,
@@ -98,16 +99,18 @@ async function reportAutoStatus(
   trigger: "geofence" | "wifi" | "periodic" | "foreground",
   geofenceEvent?: GeofenceEvent
 ): Promise<PresenceStatus | null> {
-  const [deviceId, memberId, groupId, config, wifis, strictWifi, wifiOnly, lastStatus] = await Promise.all([
-    getOrCreateDeviceId(),
-    AsyncStorage.getItem(STORAGE_KEYS.memberId),
-    AsyncStorage.getItem(STORAGE_KEYS.groupId),
-    loadHomeGeofenceConfig(),
-    loadRegisteredWifis(),
-    loadStrictHomeWifi(),
-    loadWifiOnlyMode(),
-    AsyncStorage.getItem(LAST_STATUS_KEY),
-  ]);
+  const [deviceId, memberId, groupId, config, wifis, strictWifi, wifiOnly, nearbyGpsEnabled, lastStatus] =
+    await Promise.all([
+      getOrCreateDeviceId(),
+      AsyncStorage.getItem(STORAGE_KEYS.memberId),
+      AsyncStorage.getItem(STORAGE_KEYS.groupId),
+      loadHomeGeofenceConfig(),
+      loadRegisteredWifis(),
+      loadStrictHomeWifi(),
+      loadWifiOnlyMode(),
+      loadNearbyGpsEnabled(),
+      AsyncStorage.getItem(LAST_STATUS_KEY),
+    ]);
   if (!memberId) return null;
 
   const wifiState = readWifiState();
@@ -120,6 +123,7 @@ async function reportAutoStatus(
     wifi,
     wifiOn: wifiState ? wifiState.enabled : null,
     strict: strictWifi || undefined,
+    nearbyGps: nearbyGpsEnabled ? undefined : "off",
     geo: geofenceEvent ? `${geofenceEvent.type}:${geofenceEvent.regionId}` : undefined,
   };
   const client = new ApiClient(API_BASE_URL, deviceId);
@@ -153,9 +157,12 @@ async function reportAutoStatus(
       buildingRadiusM: config?.buildingRadiusM ?? 0,
       wifi,
       strictWifi,
+      nearbyGpsEnabled,
     });
     // 現在地が取れなくても、OSが知らせてくれた範囲の出入りから判定する
-    if (!status && geofenceEvent) status = judgeFromGeofenceEvent(geofenceEvent, wifi, strictWifi);
+    if (!status && geofenceEvent) {
+      status = judgeFromGeofenceEvent(geofenceEvent, wifi, strictWifi, nearbyGpsEnabled);
+    }
   }
   if (!status) return finish(null, false);
 
@@ -248,7 +255,7 @@ export async function startHomeGeofence(
   await AsyncStorage.removeItem(LAST_STATUS_KEY);
   // Wi-Fiだけで判定するモード(F27)では、位置情報を使わないため、位置の見張り(ジオフェンス)は登録しない
   if (!(await loadWifiOnlyMode())) {
-    await Location.startGeofencingAsync(GEOFENCE_TASK_NAME, [
+    const regions = [
       {
         identifier: HOME_REGION_ID,
         latitude: lat,
@@ -257,15 +264,19 @@ export async function startHomeGeofence(
         notifyOnEnter: true,
         notifyOnExit: true,
       },
-      {
+    ];
+    // 「近くにいる」のGPS判定(F29)がオフのときは、建物の範囲は登録しない(自宅の範囲だけで在宅・外出中を決める)
+    if (await loadNearbyGpsEnabled()) {
+      regions.push({
         identifier: BUILDING_REGION_ID,
         latitude: lat,
         longitude: lng,
         radius: buildingRadiusM,
         notifyOnEnter: true,
         notifyOnExit: true,
-      },
-    ]);
+      });
+    }
+    await Location.startGeofencingAsync(GEOFENCE_TASK_NAME, regions);
   }
   await startPeriodicCheck();
   await startHomeWifiWatch();

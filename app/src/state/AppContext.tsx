@@ -18,6 +18,8 @@ import {
   loadRegisteredWifis,
   loadStrictHomeWifi,
   loadWifiOnlyMode,
+  loadNearbyGpsEnabled,
+  saveNearbyGpsEnabled,
   loadMemberships,
   Membership,
   RegisteredWifi,
@@ -63,6 +65,8 @@ interface AppContextValue {
   strictHomeWifi: boolean;
   /** 位置情報を使わず、Wi-Fiの接続だけで判定するモード(F27)。 */
   wifiOnlyMode: boolean;
+  /** 「マンション内など近くにいる」をGPSで判定するか(F29)。オフなら、GPSでは在宅・外出中の2段階だけ。 */
+  nearbyGpsEnabled: boolean;
   /** この端末で自宅Wi-Fiの判定が使えるか(Android版のみ)。 */
   homeWifiSupported: boolean;
   amIAdmin: boolean;
@@ -81,7 +85,13 @@ interface AppContextValue {
   /** 参加中グループの一覧を、端末内の保存内容に頼らずDBから取り直す。 */
   refreshMyGroups: () => Promise<void>;
   refreshMembers: (targetGroupId?: string) => Promise<void>;
-  saveHome: (lat: number, lng: number, homeRadiusM: number, buildingRadiusM: number) => Promise<void>;
+  saveHome: (
+    lat: number,
+    lng: number,
+    homeRadiusM: number,
+    buildingRadiusM: number,
+    nearbyGpsEnabled?: boolean
+  ) => Promise<void>;
   /** いま接続中のWi-Fiを、自宅のWi-Fi・別の部屋のWi-Fiとして登録する。登録できない理由はErrorのmessageで返す。 */
   addWifi: (kind: WifiKind) => Promise<void>;
   removeWifi: (ssid: string) => Promise<void>;
@@ -119,6 +129,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [registeredWifis, setRegisteredWifis] = useState<RegisteredWifi[]>([]);
   const [strictHomeWifi, setStrictHomeWifiState] = useState(false);
   const [wifiOnlyMode, setWifiOnlyModeState] = useState(false);
+  const [nearbyGpsEnabled, setNearbyGpsEnabledState] = useState(true);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [members, setMembers] = useState<MemberView[]>([]);
   const [memberships, setMemberships] = useState<Membership[]>([]);
@@ -183,6 +194,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setRegisteredWifis(await loadRegisteredWifis());
       setStrictHomeWifiState(await loadStrictHomeWifi());
       setWifiOnlyModeState(await loadWifiOnlyMode());
+      setNearbyGpsEnabledState(await loadNearbyGpsEnabled());
       try {
         await syncMembershipsWithServer(new ApiClient(API_BASE_URL, id));
       } catch {
@@ -353,10 +365,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const saveHome = useCallback(
-    async (lat: number, lng: number, homeRadiusMValue: number, buildingRadiusMValue: number) => {
+    async (
+      lat: number,
+      lng: number,
+      homeRadiusMValue: number,
+      buildingRadiusMValue: number,
+      nearbyGpsEnabledValue?: boolean
+    ) => {
       if (!api || !memberId) return;
       await withLoading(async () => {
         await api.updateHome(memberId, lat, lng, homeRadiusMValue, buildingRadiusMValue);
+        // ジオフェンスの登録(下のstartHomeGeofence)がこの設定を読むため、先に保存しておく
+        if (nearbyGpsEnabledValue !== undefined) {
+          await saveNearbyGpsEnabled(nearbyGpsEnabledValue);
+          setNearbyGpsEnabledState(nearbyGpsEnabledValue);
+        }
         setHomeRadiusM(homeRadiusMValue);
         setBuildingRadiusM(buildingRadiusMValue);
         await saveHomeGeofenceConfig({
@@ -564,6 +587,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setRegisteredWifis([]);
       setStrictHomeWifiState(false);
       setWifiOnlyModeState(false);
+      setNearbyGpsEnabledState(true);
       setGroupId(null);
       setMemberId(null);
       setMyName("");
@@ -624,6 +648,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     registeredWifis,
     strictHomeWifi,
     wifiOnlyMode,
+    nearbyGpsEnabled,
     homeWifiSupported: isHomeWifiSupported(),
     amIAdmin,
     inviteCode,

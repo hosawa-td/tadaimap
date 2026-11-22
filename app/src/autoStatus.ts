@@ -68,13 +68,20 @@ export function judgeAutoStatus(input: {
   wifi: WifiMatch;
   /** マンションの別の階・別の部屋と区別するため、自宅Wi-Fiにつながっていなければ在宅にしない設定。 */
   strictWifi?: boolean;
+  /**
+   * 「近くにいる」(施設内)をGPSの距離で判定するか(F29)。省略時はtrue(従来どおり)。
+   * falseのときは、GPSでは「近くにいる」を作らず、自宅の範囲の内側なら在宅、外側なら外出中とする。
+   */
+  nearbyGpsEnabled?: boolean;
 }): PresenceStatus | null {
   const { distanceM, homeRadiusM, buildingRadiusM, wifi } = input;
   // 自宅Wi-Fiは部屋の中でしか届かないため、つながっていれば屋内のGPSのずれより優先して在宅とみなす
   if (wifi === "home") return "home";
   // 別の部屋のWi-Fiにつながっていれば、その部屋(同じ建物内)にいるため、距離に関係なく「近くにいる」とみなす
+  // (これはWi-Fiによる判定なので、GPSの「近くにいる」判定をオフにしても変わらない)
   if (wifi === "room") return "nearby";
   if (distanceM === null) return null;
+  if (input.nearbyGpsEnabled === false) return distanceM <= homeRadiusM ? "home" : "away";
   if (distanceM > buildingRadiusM) return "away";
   // 自宅Wi-Fiが登録済みでつながっていなければ、同じ建物内(1Fロビー・別の階の部屋等)にいるとみなす
   if (isOutsideHomeWifi(wifi, input.strictWifi)) return "nearby";
@@ -109,10 +116,16 @@ export interface GeofenceEvent {
 export function judgeFromGeofenceEvent(
   event: GeofenceEvent,
   wifi: WifiMatch,
-  strictWifi?: boolean
-): PresenceStatus {
+  strictWifi?: boolean,
+  nearbyGpsEnabled: boolean = true
+): PresenceStatus | null {
   if (wifi === "home") return "home";
   if (wifi === "room") return "nearby";
+  if (!nearbyGpsEnabled) {
+    // 「近くにいる」のGPS判定がオフのときは、自宅の範囲の出入りだけで在宅・外出中を決める(建物の範囲は使わない)
+    if (event.regionId !== "home") return null;
+    return event.type === "exit" ? "away" : "home";
+  }
   if (event.regionId === "home") {
     if (event.type === "exit") return "nearby";
     // 自宅Wi-Fiが登録済みでつながっていなければ、同じ建物内(1Fロビー・別の階の部屋等)にいるとみなす

@@ -18,6 +18,7 @@ export const STORAGE_KEYS = {
   strictHomeWifi: "tadaimap.strictHomeWifi",
   registeredWifis: "tadaimap.registeredWifis",
   wifiOnlyMode: "tadaimap.wifiOnlyMode",
+  nearbyGpsOff: "tadaimap.nearbyGpsOff",
 } as const;
 
 /** 1台の端末が複数の家族グループに参加できるように、参加中のグループを配列で保持する。 */
@@ -276,6 +277,22 @@ export async function loadWifiOnlyMode(): Promise<boolean> {
   return (await AsyncStorage.getItem(STORAGE_KEYS.wifiOnlyMode)) === "1";
 }
 
+/**
+ * 「マンション内など近くにいる」のGPS判定を使うか(F29)。初期値はオン(従来どおり)。端末内にのみ保存する。
+ * オフのときだけ印を保存する(保存が無い端末・以前の版の端末は、オンのまま)。
+ */
+export async function saveNearbyGpsEnabled(enabled: boolean): Promise<void> {
+  if (enabled) {
+    await AsyncStorage.removeItem(STORAGE_KEYS.nearbyGpsOff);
+  } else {
+    await AsyncStorage.setItem(STORAGE_KEYS.nearbyGpsOff, "1");
+  }
+}
+
+export async function loadNearbyGpsEnabled(): Promise<boolean> {
+  return (await AsyncStorage.getItem(STORAGE_KEYS.nearbyGpsOff)) !== "1";
+}
+
 function memberOrderKey(groupId: string): string {
   return `tadaimap.memberOrder.${groupId}`;
 }
@@ -318,5 +335,6 @@ export async function clearAllMemberships(): Promise<void> {
     STORAGE_KEYS.strictHomeWifi,
     STORAGE_KEYS.registeredWifis,
     STORAGE_KEYS.wifiOnlyMode,
+    STORAGE_KEYS.nearbyGpsOff,
   ]);
 }

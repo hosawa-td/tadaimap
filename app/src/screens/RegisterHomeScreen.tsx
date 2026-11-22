@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -15,6 +16,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../../App";
 import { useApp } from "../state/AppContext";
 import { getCurrentLocation, requestLocationPermissions } from "../location";
+import { loadHomeGeofenceConfig } from "../storage";
 import {
   BUILDING_RADIUS_DEFAULT,
   BUILDING_RADIUS_MAX,
@@ -29,31 +31,53 @@ type Props = NativeStackScreenProps<RootStackParamList, "RegisterHome">;
 
 // 東京駅付近。現在地が取得できるまでの仮の表示位置。
 const FALLBACK_REGION = { lat: 35.681236, lng: 139.767125 };
+// 地図の拡大率(約1km四方が見える程度)。ボタンで中心を移すときもこの大きさにそろえる。
+const MAP_DELTA = 0.01;
 
 export default function RegisterHomeScreen({ navigation, route }: Props) {
   const fromSettings = route.params?.fromSettings ?? false;
-  const { saveHome, homeRadiusM, buildingRadiusM, loading } = useApp();
+  const { saveHome, homeRadiusM, buildingRadiusM, nearbyGpsEnabled, loading } = useApp();
 
   const [radiusM, setRadiusM] = useState(fromSettings ? homeRadiusM : RADIUS_DEFAULT);
   const [buildingRadiusMValue, setBuildingRadiusMValue] = useState(
     fromSettings ? buildingRadiusM : BUILDING_RADIUS_DEFAULT
   );
+  // 「近くにいる」をGPSで判定するか(F29)。設定画面から開いたときは、いまの設定から始める
+  const [nearbyGps, setNearbyGps] = useState(fromSettings ? nearbyGpsEnabled : true);
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationGranted, setLocationGranted] = useState(false);
   const [statusText, setStatusText] = useState(
     fromSettings
       ? `現在の設定：半径 ${homeRadiusM}m。ピンをドラッグするか地図をタップすると位置を変更できます。`
-      : "地図をタップするか「現在地にピンを移動」を押して、自宅の位置を選んでください。"
+      : "地図をタップして、自宅の位置を選んでください。"
   );
+  const mapRef = useRef<MapView>(null);
+  // 画面を開いたあとの最初の位置が決まったときだけ、地図の中心をそこへ移す(その後は、ボタンを押したときだけ動かす)
+  const initialCentered = useRef(false);
+
+  const centerMapOn = (lat: number, lng: number) => {
+    mapRef.current?.animateToRegion(
+      { latitude: lat, longitude: lng, latitudeDelta: MAP_DELTA, longitudeDelta: MAP_DELTA },
+      400
+    );
+  };
 
   useEffect(() => {
-    // 現在地を取得できる場合は、最初から地図の中心とピンの候補にしておく
-    // (自宅設定の変更時は保存済みの座標を持っていないため、現在地を初期値として使う)
     (async () => {
       try {
+        // 設定画面から開いたときは、保存済みの自宅の位置をピンの初期位置にする
+        if (fromSettings) {
+          const saved = await loadHomeGeofenceConfig();
+          if (saved) setCoords({ lat: saved.lat, lng: saved.lng });
+        }
         const permission = await requestLocationPermissions();
         if (!permission.foreground) return;
-        const location = await getCurrentLocation();
-        setCoords((prev) => prev ?? location);
+        setLocationGranted(true);
+        // 保存済みの位置が無い(初回の登録)ときは、現在地を最初のピンの候補にする
+        if (!fromSettings) {
+          const location = await getCurrentLocation();
+          setCoords((prev) => prev ?? location);
+        }
       } catch {
         // 取得できなくても地図はデフォルト位置のまま表示できるため、何もしない
       }
@@ -61,25 +85,39 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleUseCurrentLocation = async () => {
-    setStatusText("位置情報を取得中…");
+  useEffect(() => {
+    if (coords && !initialCentered.current) {
+      initialCentered.current = true;
+      centerMapOn(coords.lat, coords.lng);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coords]);
+
+  /** 「設定位置」ボタン: ピン(設定した自宅の位置)を地図の中心にする。 */
+  const handleCenterOnPin = () => {
+    if (!coords) return;
+    centerMapOn(coords.lat, coords.lng);
+  };
+
+  /** 「現在地」ボタン: 現在地を地図の中心にする(ピンは動かさない。現在地は地図上の青い点で表示する)。 */
+  const handleCenterOnCurrentLocation = async () => {
+    setStatusText("現在地を取得中…");
     try {
       const permission = await requestLocationPermissions();
       if (!permission.foreground) {
         setStatusText("位置情報の利用が許可されていません。端末の設定から許可してください。");
         return;
       }
+      setLocationGranted(true);
       const location = await getCurrentLocation();
-      setCoords(location);
-      if (!permission.background) {
-        setStatusText(
-          "現在地を取得しました。ただし「常に許可」が選択されていないため、アプリを閉じている間の自動判定はできません。"
-        );
-      } else {
-        setStatusText("ピンを現在地に移動しました。位置は地図上でも調整できます。「この位置で保存する」で確定します。");
-      }
+      centerMapOn(location.lat, location.lng);
+      setStatusText(
+        permission.background
+          ? "現在地を地図の中心にしました（青い点が現在地です）。"
+          : "現在地を地図の中心にしました。ただし「常に許可」が選択されていないため、アプリを閉じている間の自動判定はできません。"
+      );
     } catch (err) {
-      setStatusText("位置情報を取得できませんでした。地図をタップして位置を選ぶこともできます。");
+      setStatusText("位置情報を取得できませんでした。端末の位置情報がオンになっているか確認してください。");
     }
   };
 
@@ -103,11 +141,11 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
 
   const handleSave = async () => {
     if (!coords) {
-      Alert.alert("自宅の位置が未設定です", "地図をタップするか「現在地にピンを移動」を押して、位置を選んでください。");
+      Alert.alert("自宅の位置が未設定です", "地図をタップして、自宅の位置を選んでください。");
       return;
     }
     try {
-      await saveHome(coords.lat, coords.lng, radiusM, buildingRadiusMValue);
+      await saveHome(coords.lat, coords.lng, radiusM, buildingRadiusMValue, nearbyGps);
       if (fromSettings) {
         navigation.goBack();
       } else {
@@ -118,7 +156,7 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
     }
   };
 
-  const mapCenter = coords ?? FALLBACK_REGION;
+  const buildingMin = Math.max(RADIUS_MIN, BUILDING_RADIUS_MIN, radiusM);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -132,13 +170,16 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
 
         <View style={styles.mapWrap}>
           <MapView
+            ref={mapRef}
             style={styles.map}
-            region={{
-              latitude: mapCenter.lat,
-              longitude: mapCenter.lng,
-              latitudeDelta: 0.01,
-              longitudeDelta: 0.01,
+            initialRegion={{
+              latitude: (coords ?? FALLBACK_REGION).lat,
+              longitude: (coords ?? FALLBACK_REGION).lng,
+              latitudeDelta: MAP_DELTA,
+              longitudeDelta: MAP_DELTA,
             }}
+            showsUserLocation={locationGranted}
+            showsMyLocationButton={false}
             onPress={handleMapPress}
           >
             {coords && (
@@ -148,12 +189,14 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
                   draggable
                   onDragEnd={(e) => handleMarkerDragEnd(e.nativeEvent.coordinate)}
                 />
-                <Circle
-                  center={{ latitude: coords.lat, longitude: coords.lng }}
-                  radius={buildingRadiusMValue}
-                  strokeColor={colors.nearby}
-                  fillColor="rgba(217, 146, 10, 0.08)"
-                />
+                {nearbyGps && (
+                  <Circle
+                    center={{ latitude: coords.lat, longitude: coords.lng }}
+                    radius={buildingRadiusMValue}
+                    strokeColor={colors.nearby}
+                    fillColor="rgba(217, 146, 10, 0.08)"
+                  />
+                )}
                 <Circle
                   center={{ latitude: coords.lat, longitude: coords.lng }}
                   radius={radiusM}
@@ -163,7 +206,21 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
               </>
             )}
           </MapView>
+          <View style={styles.mapButtons} pointerEvents="box-none">
+            <TouchableOpacity
+              style={[styles.mapButton, !coords && styles.mapButtonDisabled]}
+              onPress={handleCenterOnPin}
+              disabled={!coords}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.mapButtonText}>設定位置</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.mapButton} onPress={handleCenterOnCurrentLocation} activeOpacity={0.7}>
+              <Text style={styles.mapButtonText}>現在地</Text>
+            </TouchableOpacity>
+          </View>
         </View>
+        <Text style={styles.statusText}>{statusText}</Text>
 
         <View style={styles.radiusHeaderRow}>
           <Text style={styles.label}>在宅と判定する半径</Text>
@@ -188,33 +245,49 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
           広すぎると近所でも「在宅」扱いになり、狭すぎると建物内のGPS誤差で「不在」に切り替わる場合があります。戸建やマンションでは100m〜150mが最適です。
         </Text>
 
-        <View style={styles.radiusHeaderRow}>
-          <Text style={styles.label}>マンション内など「近くにいる」と判定する範囲</Text>
-          <Text style={[styles.radiusValue, { color: colors.nearby }]}>{buildingRadiusMValue}m</Text>
-        </View>
-        <Slider
-          minimumValue={Math.max(RADIUS_MIN, BUILDING_RADIUS_MIN, radiusM)}
-          maximumValue={BUILDING_RADIUS_MAX}
-          step={10}
-          value={buildingRadiusMValue}
-          onValueChange={setBuildingRadiusMValue}
-          minimumTrackTintColor={colors.nearby}
-          maximumTrackTintColor={colors.border}
-          thumbTintColor={colors.nearby}
-        />
-        <View style={styles.radiusScaleRow}>
-          <Text style={styles.scaleText}>{Math.max(RADIUS_MIN, BUILDING_RADIUS_MIN, radiusM)}m（狭い）</Text>
-          <Text style={styles.scaleText}>2000m（広い）</Text>
+        <View style={styles.switchRow}>
+          <View style={styles.switchTextBlock}>
+            <Text style={styles.label}>マンション内など「近くにいる」をGPSで判定する</Text>
+            <Text style={styles.switchSub}>
+              {nearbyGps
+                ? "オン：自宅の範囲の外でも、下の範囲の中にいれば「近くにいる」にします。"
+                : "オフ：GPSでは「近くにいる」を使わず、自宅の範囲の内側なら「在宅」、外側なら「外出中」にします。"}
+            </Text>
+          </View>
+          <Switch value={nearbyGps} onValueChange={setNearbyGps} />
         </View>
 
-        <Text style={styles.hint}>
-          自宅の範囲より外側でも、この範囲の中にいれば「同じ建物内にいる」として家族に知らせます。マンションの別の階や、隣接する建物まで含めたい場合は広めに設定してください。
-        </Text>
+        {nearbyGps && (
+          <>
+            <View style={styles.radiusHeaderRow}>
+              <Text style={styles.label}>「近くにいる」と判定する範囲</Text>
+              <Text style={[styles.radiusValue, { color: colors.nearby }]}>{buildingRadiusMValue}m</Text>
+            </View>
+            <Slider
+              minimumValue={buildingMin}
+              maximumValue={BUILDING_RADIUS_MAX}
+              step={10}
+              value={buildingRadiusMValue}
+              onValueChange={setBuildingRadiusMValue}
+              minimumTrackTintColor={colors.nearby}
+              maximumTrackTintColor={colors.border}
+              thumbTintColor={colors.nearby}
+            />
+            <View style={styles.radiusScaleRow}>
+              <Text style={styles.scaleText}>{buildingMin}m（狭い）</Text>
+              <Text style={styles.scaleText}>2000m（広い）</Text>
+            </View>
 
-        <TouchableOpacity style={styles.outlineButton} onPress={handleUseCurrentLocation}>
-          <Text style={styles.outlineButtonText}>現在地にピンを移動</Text>
-        </TouchableOpacity>
-        <Text style={styles.statusText}>{statusText}</Text>
+            <Text style={styles.hint}>
+              自宅の範囲より外側でも、この範囲の中にいれば「同じ建物内にいる」として家族に知らせます。マンションの別の階や、隣接する建物まで含めたい場合は広めに設定してください。
+            </Text>
+          </>
+        )}
+        {!nearbyGps && (
+          <Text style={styles.hint}>
+            「近くにいる」のGPS判定をオフにすると、自宅の範囲を出た時点で「外出中」になります。別の部屋のWi-Fiを登録している場合は、そのWi-Fiにつながったときの「近くにいる」はそのまま使えます。
+          </Text>
+        )}
 
         <TouchableOpacity
           style={[styles.primaryButton, loading && styles.disabledButton]}
@@ -238,12 +311,30 @@ const styles = StyleSheet.create({
   header: { ...typography.headlineMd, color: colors.textPrimary, marginBottom: spacing.xs },
   lead: { ...typography.bodyMd, color: colors.textSecondary, marginBottom: spacing.lg },
   mapWrap: {
-    height: 220,
+    height: 260,
     borderRadius: radius.lg,
     overflow: "hidden",
-    marginBottom: spacing.lg,
+    marginBottom: spacing.sm,
   },
   map: { width: "100%", height: "100%" },
+  mapButtons: {
+    position: "absolute",
+    top: spacing.sm,
+    right: spacing.sm,
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  mapButton: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.full,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    elevation: 3,
+  },
+  mapButtonDisabled: { opacity: 0.4 },
+  mapButtonText: { ...typography.labelLg, color: colors.textPrimary },
   radiusHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -263,15 +354,13 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
     lineHeight: 18,
   },
-  outlineButton: {
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    borderRadius: radius.full,
-    paddingVertical: 14,
+  switchRow: {
+    flexDirection: "row",
     alignItems: "center",
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
-  outlineButtonText: { color: colors.textPrimary, ...typography.labelLg },
+  switchTextBlock: { flex: 1, marginRight: spacing.sm },
+  switchSub: { ...typography.bodySm, color: colors.textSecondary, marginTop: 2, lineHeight: 18 },
   statusText: {
     ...typography.bodySm,
     color: colors.textFaint,

@@ -527,7 +527,7 @@
   backupToCookie();
   var API_BASE = window.location.origin;
   // アプリ本体(app.config.js)のversionと合わせて手動で更新する
-  var WEB_APP_VERSION = "1.4.7";
+  var WEB_APP_VERSION = "1.4.8";
 
   function el(id) { return document.getElementById(id); }
 
@@ -1243,6 +1243,7 @@
           "Wi-Fi：" + (d.wifi ? (LOG_WIFI[d.wifi] || d.wifi) : "不明") + (d.wifiOn === false ? "（端末のWi-Fiはオフ）" : ""),
           d.pos ? "位置：" + (LOG_POS[d.pos] || d.pos) + (typeof d.distM === "number" ? "(" + d.distM + "m)" : "") : "",
           d.geo ? "範囲の出入り：" + d.geo : "",
+          d.nearbyGps === "off" ? "近くにいるGPS判定：オフ" : "",
           "判定：" + (d.judged && d.judged !== "none" ? logStatusName(d.judged, nearbyLabel) : "判断できず"),
           d.sent ? "結果：" + (LOG_SENT[d.sent] || d.sent) : "",
           d.err ? "エラー：" + d.err : "",

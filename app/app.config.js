@@ -2,7 +2,7 @@ module.exports = {
   expo: {
     name: "タダイマップ",
     slug: "tadaimap",
-    version: "1.4.7",
+    version: "1.4.8",
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "automatic",
@@ -27,7 +27,7 @@ module.exports = {
     },
     android: {
       package: "com.tadaimap.app",
-      versionCode: 13,
+      versionCode: 14,
       adaptiveIcon: {
         foregroundImage: "./assets/adaptive-icon.png",
         backgroundColor: "#FDF8F0",

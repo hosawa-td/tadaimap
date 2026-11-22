@@ -218,3 +218,44 @@ describe("judgeWifiOnly(位置情報を使わない判定)", () => {
     expect(judgeWifiOnly(classifyWifi({ enabled: false, connected: false, ssid: null }, homeOnly))).toBeNull();
   });
 });
+
+describe("近くにいるGPS判定をオフにしたとき(F29)", () => {
+  const off = { nearbyGpsEnabled: false };
+
+  it("初期値(省略)はオンで、従来どおり自宅の範囲の外でも施設内の範囲の中なら「近くにいる」", () => {
+    expect(judgeAutoStatus({ ...config, distanceM: 200, wifi: "none" })).toBe("nearby");
+    expect(judgeAutoStatus({ ...config, distanceM: 200, wifi: "none", nearbyGpsEnabled: true })).toBe("nearby");
+  });
+
+  it("オフなら、GPSでは「近くにいる」にならず、自宅の範囲の内側は在宅・外側は外出中", () => {
+    expect(judgeAutoStatus({ ...config, distanceM: 50, wifi: "none", ...off })).toBe("home");
+    expect(judgeAutoStatus({ ...config, distanceM: 100, wifi: "none", ...off })).toBe("home"); // ちょうど半径は在宅
+    expect(judgeAutoStatus({ ...config, distanceM: 101, wifi: "none", ...off })).toBe("away");
+    // 施設内の範囲(300m)の中でも、外出中になる
+    expect(judgeAutoStatus({ ...config, distanceM: 200, wifi: "none", ...off })).toBe("away");
+  });
+
+  it("オフのときは、自宅Wi-Fiに未接続でも、自宅の範囲の内側なら在宅(Wi-Fiによる「近くにいる」は使わない)", () => {
+    expect(judgeAutoStatus({ ...config, distanceM: 10, wifi: "other", ...off })).toBe("home");
+    expect(judgeAutoStatus({ ...config, distanceM: 10, wifi: "unknown", strictWifi: true, ...off })).toBe("home");
+  });
+
+  it("Wi-Fiによる判定は、オフでも変わらない(自宅Wi-Fi=在宅、別の部屋のWi-Fi=近くにいる)", () => {
+    expect(judgeAutoStatus({ ...config, distanceM: 5000, wifi: "home", ...off })).toBe("home");
+    expect(judgeAutoStatus({ ...config, distanceM: 5000, wifi: "room", ...off })).toBe("nearby");
+  });
+
+  it("距離が分からないときは、オフでも判断しない", () => {
+    expect(judgeAutoStatus({ ...config, distanceM: null, wifi: "none", ...off })).toBeNull();
+  });
+
+  it("位置の出入りだけから判定する場合も、オフなら自宅の範囲の出入りだけを使う", () => {
+    expect(judgeFromGeofenceEvent({ regionId: "home", type: "exit" }, "none", false, false)).toBe("away");
+    expect(judgeFromGeofenceEvent({ regionId: "home", type: "enter" }, "none", false, false)).toBe("home");
+    // 建物の範囲のイベントは無視する(オフのときは登録もしないが、届いても使わない)
+    expect(judgeFromGeofenceEvent({ regionId: "building", type: "exit" }, "none", false, false)).toBeNull();
+    // オンのときは従来どおり
+    expect(judgeFromGeofenceEvent({ regionId: "home", type: "exit" }, "none", false, true)).toBe("nearby");
+    expect(judgeFromGeofenceEvent({ regionId: "building", type: "exit" }, "none", false, true)).toBe("away");
+  });
+});

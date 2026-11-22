@@ -27,6 +27,7 @@ export default function SettingsScreen() {
     notifyEnabled,
     homeRadiusM,
     buildingRadiusM,
+    nearbyGpsEnabled,
     nearbyLabel,
     registeredWifis,
     homeWifiSupported,
@@ -284,7 +285,9 @@ export default function SettingsScreen() {
             <View style={styles.rowTextBlock}>
               <Text style={styles.rowTitle}>自宅の位置・判定範囲</Text>
               <Text style={styles.rowSub}>
-                現在：半径 {homeRadiusM}m（施設内は {buildingRadiusM}m まで）
+                {nearbyGpsEnabled
+                  ? `現在：半径 ${homeRadiusM}m（施設内は ${buildingRadiusM}m まで）`
+                  : `現在：半径 ${homeRadiusM}m（施設内のGPS判定：オフ）`}
               </Text>
             </View>
             <Text style={styles.chevron}>›</Text>
