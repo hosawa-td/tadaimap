@@ -22,6 +22,7 @@ import {
   loadStrictHomeWifi,
   loadWifiOnlyMode,
   loadNearbyGpsEnabled,
+  saveNearbyGpsEnabled,
   saveWifiOnlyMode,
   RegisteredWifi,
   saveRegisteredWifis,
@@ -470,6 +471,28 @@ export async function setWifiOnlyMode(enabled: boolean): Promise<void> {
   }
   await addDiagLog("mode_change", { wifiOnly: enabled });
   await reportAutoStatus("wifi");
+}
+
+/**
+ * 「近くにいる」をGPSで判定するか(F29)を切り替える。切り替えた時点で端末に保存し、位置の見張り(ジオフェンス)を
+ * 登録し直して、すぐに判定し直す。画面の「この位置で保存する」を押さなくても、設定は残る。
+ * 自宅の位置が未登録の間は、設定だけを保存する(自宅を保存したときに、この設定で見張りを登録する)。
+ */
+export async function applyNearbyGpsSetting(enabled: boolean): Promise<void> {
+  await saveNearbyGpsEnabled(enabled);
+  const config = await loadHomeGeofenceConfig();
+  // Wi-Fiだけで判定するモード(F27)では、位置の見張りを使わないため、登録し直さない
+  if (config && !(await loadWifiOnlyMode())) {
+    try {
+      await startHomeGeofence(config.lat, config.lng, config.homeRadiusM, config.buildingRadiusM);
+    } catch (err) {
+      // 権限が無い等で登録できなくても、設定の保存と、開いた時点の判定は続ける
+      // eslint-disable-next-line no-console
+      console.warn("[nearbyGps] ジオフェンスを再登録できませんでした", err);
+    }
+  }
+  await addDiagLog("mode_change", { nearbyGps: enabled ? "on" : "off" });
+  if (config) await reportAutoStatus("wifi");
 }
 
 export async function getCurrentLocation(): Promise<{ lat: number; lng: number }> {

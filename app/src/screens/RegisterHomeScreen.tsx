@@ -36,14 +36,15 @@ const MAP_DELTA = 0.01;
 
 export default function RegisterHomeScreen({ navigation, route }: Props) {
   const fromSettings = route.params?.fromSettings ?? false;
-  const { saveHome, homeRadiusM, buildingRadiusM, nearbyGpsEnabled, loading } = useApp();
+  const { saveHome, homeRadiusM, buildingRadiusM, nearbyGpsEnabled, changeNearbyGpsEnabled, loading } = useApp();
 
   const [radiusM, setRadiusM] = useState(fromSettings ? homeRadiusM : RADIUS_DEFAULT);
   const [buildingRadiusMValue, setBuildingRadiusMValue] = useState(
     fromSettings ? buildingRadiusM : BUILDING_RADIUS_DEFAULT
   );
-  // 「近くにいる」をGPSで判定するか(F29)。設定画面から開いたときは、いまの設定から始める
-  const [nearbyGps, setNearbyGps] = useState(fromSettings ? nearbyGpsEnabled : true);
+  // 「近くにいる」をGPSで判定するか(F29)。画面を開いたときは、保存されている設定を表示する
+  // (スイッチを切り替えた時点で保存されるため、別の画面へ移っても、戻ったときに同じ設定が表示される)
+  const [nearbyGps, setNearbyGps] = useState(nearbyGpsEnabled);
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [locationGranted, setLocationGranted] = useState(false);
   const [statusText, setStatusText] = useState(
@@ -139,13 +140,24 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
     setBuildingRadiusMValue((prev) => (prev < minBuilding ? minBuilding : prev));
   };
 
+  /** スイッチを切り替えたら、その場で保存・反映する(「この位置で保存する」を押さなくても残る)。 */
+  const handleToggleNearbyGps = async (value: boolean) => {
+    setNearbyGps(value);
+    try {
+      await changeNearbyGpsEnabled(value);
+    } catch (err) {
+      setNearbyGps(!value); // 保存できなかったときは、表示も元に戻す
+      Alert.alert("エラー", err instanceof Error ? err.message : "設定を保存できませんでした");
+    }
+  };
+
   const handleSave = async () => {
     if (!coords) {
       Alert.alert("自宅の位置が未設定です", "地図をタップして、自宅の位置を選んでください。");
       return;
     }
     try {
-      await saveHome(coords.lat, coords.lng, radiusM, buildingRadiusMValue, nearbyGps);
+      await saveHome(coords.lat, coords.lng, radiusM, buildingRadiusMValue);
       if (fromSettings) {
         navigation.goBack();
       } else {
@@ -254,7 +266,7 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
                 : "オフ：GPSでは「近くにいる」を使わず、自宅の範囲の内側なら「在宅」、外側なら「外出中」にします。"}
             </Text>
           </View>
-          <Switch value={nearbyGps} onValueChange={setNearbyGps} />
+          <Switch value={nearbyGps} onValueChange={handleToggleNearbyGps} />
         </View>
 
         {nearbyGps && (

@@ -34,6 +34,7 @@ import {
 import { BUILDING_RADIUS_DEFAULT, NEARBY_LABEL_DEFAULT, RADIUS_DEFAULT } from "../validation";
 import { registerForPushNotifications, subscribeToNotifications } from "../notifications";
 import {
+  applyNearbyGpsSetting,
   isHomeWifiSupported,
   refreshAutoStatus,
   registerWifi,
@@ -97,6 +98,8 @@ interface AppContextValue {
   removeWifi: (ssid: string) => Promise<void>;
   changeStrictHomeWifi: (enabled: boolean) => Promise<void>;
   changeWifiOnlyMode: (enabled: boolean) => Promise<void>;
+  /** 「近くにいる」のGPS判定のオン／オフ(F29)。切り替えた時点で保存・反映する。 */
+  changeNearbyGpsEnabled: (enabled: boolean) => Promise<void>;
   setStatus: (status: PresenceStatus, source: "auto" | "manual") => Promise<void>;
   setMemberStatus: (targetMemberId: string, status: PresenceStatus) => Promise<void>;
   saveProfile: (fields: { name?: string; showName?: boolean }) => Promise<void>;
@@ -450,6 +453,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [withLoading, refreshMembers]
   );
 
+  const changeNearbyGpsEnabled = useCallback(
+    async (enabled: boolean) => {
+      await withLoading(async () => {
+        await applyNearbyGpsSetting(enabled);
+        setNearbyGpsEnabledState(enabled);
+        // 切り替えと同時に自動判定が走り、自分のステータスが変わることがあるため一覧も取り直す
+        await refreshMembers();
+      });
+    },
+    [withLoading, refreshMembers]
+  );
+
   const setStatus = useCallback(
     async (status: PresenceStatus, source: "auto" | "manual") => {
       if (!api || !memberId) return;
@@ -666,6 +681,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     removeWifi,
     changeStrictHomeWifi,
     changeWifiOnlyMode,
+    changeNearbyGpsEnabled,
     setStatus,
     setMemberStatus,
     saveProfile,
