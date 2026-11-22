@@ -50,7 +50,7 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
   const [statusText, setStatusText] = useState(
     fromSettings
       ? `現在の設定：半径 ${homeRadiusM}m。ピンをドラッグするか地図をタップすると位置を変更できます。`
-      : "地図をタップして、自宅の位置を選んでください。"
+      : "地図をタップするか「現在地にピンを移動」を押して、自宅の位置を選んでください。"
   );
   const mapRef = useRef<MapView>(null);
   // 画面を開いたあとの最初の位置が決まったときだけ、地図の中心をそこへ移す(その後は、ボタンを押したときだけ動かす)
@@ -122,6 +122,29 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
     }
   };
 
+  /** 「現在地にピンを移動」ボタン: ピンを現在地へ移し、地図の中心も現在地にする(保存はしない)。 */
+  const handleMovePinToCurrentLocation = async () => {
+    setStatusText("位置情報を取得中…");
+    try {
+      const permission = await requestLocationPermissions();
+      if (!permission.foreground) {
+        setStatusText("位置情報の利用が許可されていません。端末の設定から許可してください。");
+        return;
+      }
+      setLocationGranted(true);
+      const location = await getCurrentLocation();
+      setCoords(location);
+      centerMapOn(location.lat, location.lng);
+      setStatusText(
+        permission.background
+          ? "ピンを現在地に移動しました。位置は地図上でも調整できます。「この位置で保存する」で確定します。"
+          : "ピンを現在地に移動しました。ただし「常に許可」が選択されていないため、アプリを閉じている間の自動判定はできません。"
+      );
+    } catch (err) {
+      setStatusText("位置情報を取得できませんでした。地図をタップして位置を選ぶこともできます。");
+    }
+  };
+
   const handleMapPress = (e: MapPressEvent) => {
     const { latitude, longitude } = e.nativeEvent.coordinate;
     setCoords({ lat: latitude, lng: longitude });
@@ -153,7 +176,7 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
 
   const handleSave = async () => {
     if (!coords) {
-      Alert.alert("自宅の位置が未設定です", "地図をタップして、自宅の位置を選んでください。");
+      Alert.alert("自宅の位置が未設定です", "地図をタップするか「現在地にピンを移動」を押して、位置を選んでください。");
       return;
     }
     try {
@@ -232,6 +255,9 @@ export default function RegisterHomeScreen({ navigation, route }: Props) {
             </TouchableOpacity>
           </View>
         </View>
+        <TouchableOpacity style={styles.outlineButton} onPress={handleMovePinToCurrentLocation}>
+          <Text style={styles.outlineButtonText}>現在地にピンを移動</Text>
+        </TouchableOpacity>
         <Text style={styles.statusText}>{statusText}</Text>
 
         <View style={styles.radiusHeaderRow}>
@@ -366,6 +392,15 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
     lineHeight: 18,
   },
+  outlineButton: {
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radius.full,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginBottom: spacing.sm,
+  },
+  outlineButtonText: { color: colors.textPrimary, ...typography.labelLg },
   switchRow: {
     flexDirection: "row",
     alignItems: "center",
