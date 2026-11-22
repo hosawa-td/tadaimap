@@ -81,7 +81,7 @@ const SENT_LABEL: Record<string, string> = { ok: "送信", same: "変更なし",
 const IGNORE_REASON_LABEL: Record<string, string> = {
   same_status: "すでに同じ状態",
   duplicate: "直前の重複",
-  flip_flop: "直前の変更から60秒以内の外出",
+  flip_flop: "直前の変更から90秒以内の外出",
 };
 
 function join(parts: (string | undefined)[], separator: string): string {

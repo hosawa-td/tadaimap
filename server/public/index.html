@@ -527,7 +527,7 @@
   backupToCookie();
   var API_BASE = window.location.origin;
   // アプリ本体(app.config.js)のversionと合わせて手動で更新する
-  var WEB_APP_VERSION = "1.4.10";
+  var WEB_APP_VERSION = "1.4.11";
 
   function el(id) { return document.getElementById(id); }
 
@@ -1178,7 +1178,7 @@
   var LOG_WIFI = { home: "自宅", room: "別の部屋", other: "他のWi-Fi・未接続", unknown: "不明", none: "未登録" };
   var LOG_POS = { fresh: "取得", lastKnown: "直近の記録", none: "取得できず", skipped: "取得せず" };
   var LOG_SENT = { ok: "送信", same: "変更なし", error: "失敗" };
-  var LOG_IGNORE = { same_status: "すでに同じ状態", duplicate: "直前の重複", flip_flop: "直前の変更から60秒以内の外出" };
+  var LOG_IGNORE = { same_status: "すでに同じ状態", duplicate: "直前の重複", flip_flop: "直前の変更から90秒以内の外出" };
 
   function logJst(iso) {
     var ms = Date.parse(iso);

@@ -30,7 +30,7 @@ const MAX_LOG_ENTRIES_PER_REQUEST = 200;
 /** 直前の自動更新と同じ状態が、この秒数以内に再送されたら重複として無視する(端末側の二重送信対策) */
 const AUTO_DUPLICATE_WINDOW_MS = 5_000;
 /** 直前の状態変更からこの秒数以内に届いた自動の「外出」は、Wi-Fiのゆれによる誤判定として無視する */
-const AUTO_AWAY_AFTER_CHANGE_GUARD_MS = 60_000;
+const AUTO_AWAY_AFTER_CHANGE_GUARD_MS = 90_000;
 
 /** メンバーごとの、直近に受け付けた自動更新(サーバー再起動で消えてよい、重複排除用の一時記憶) */
 const recentAutoStatus = new Map<string, { status: PresenceStatus; atMs: number }>();

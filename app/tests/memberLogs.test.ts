@@ -37,7 +37,7 @@ describe("describeLog", () => {
   it("無視された更新:理由を日本語で表示する", () => {
     const d = describeLog(entry("2026-11-21T23:06:51.000Z", "status_ignored", { from: "home", to: "away", reason: "flip_flop", source: "auto" }), "施設内");
     expect(d).toMatchObject({ kind: "status", title: "無視：外出中への自動更新" });
-    expect(d.note).toBe("理由：直前の変更から60秒以内の外出");
+    expect(d.note).toBe("理由：直前の変更から90秒以内の外出");
   });
 
   it("Androidの自動判定ログ:Wi-Fi・位置・判定・結果を1行にまとめる(技術的なログ)", () => {
