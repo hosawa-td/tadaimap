@@ -3,7 +3,7 @@ import * as TaskManager from "expo-task-manager";
 import * as BackgroundTask from "expo-background-task";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import TadaimapWifi from "../modules/tadaimap-wifi";
-import { ApiClient, PresenceStatus } from "./api";
+import { ApiClient, ApiError, PresenceStatus } from "./api";
 import {
   classifyWifi,
   distanceMeters,
@@ -16,6 +16,7 @@ import {
 } from "./autoStatus";
 import { getOrCreateDeviceId } from "./deviceId";
 import { addDiagLog, flushDiagLogs } from "./diagLog";
+import { retryWithBackoff } from "./retry";
 import {
   loadHomeGeofenceConfig,
   loadRegisteredWifis,
@@ -178,9 +179,13 @@ async function reportAutoStatus(
   }
 
   try {
-    await client.updateStatus(memberId, status, "auto");
+    // 外出直後は通信がまだ使えず失敗しやすいため、通信エラー・サーバーエラーは数十秒ほど再試行する
+    const { attempts } = await retryWithBackoff(() => client.updateStatus(memberId, status as PresenceStatus, "auto").then(() => undefined), {
+      shouldRetry: (e) => !(e instanceof ApiError) || e.status >= 500,
+    });
     await AsyncStorage.setItem(LAST_STATUS_KEY, status);
     diag.sent = "ok";
+    if (attempts > 1) diag.retries = attempts - 1;
     return finish(status, true);
   } catch (err) {
     // eslint-disable-next-line no-console
