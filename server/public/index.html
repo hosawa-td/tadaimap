@@ -886,9 +886,13 @@
   }
 
   async function loadHome() {
-    // グループを切り替えると送信先URLが変わるため、表示中のショートカット用の情報はいったん隠す
-    el("shortcut-panel").hidden = true;
-    el("shortcut-toggle-btn").textContent = "設定用の情報を表示する";
+    // グループを切り替えると送信先URLが変わるため、表示中のショートカット用の情報は隠す。
+    // 他のアプリから戻ってきた・通知で更新されただけ(同じグループ)のときは、開いたままにする
+    var shortcutPanel = el("shortcut-panel");
+    if (!shortcutPanel.hidden && shortcutPanel.dataset.memberId !== storageGet(STORAGE.memberId)) {
+      shortcutPanel.hidden = true;
+      el("shortcut-toggle-btn").textContent = "設定用の情報を表示する";
+    }
     await syncMembershipsWithServer();
     var groupId = storageGet(STORAGE.groupId);
     if (!groupId) return;
@@ -1062,6 +1066,7 @@
       }
       el("shortcut-url").textContent = API_BASE + "/members/" + memberId + "/status";
       el("shortcut-device-id").textContent = deviceId;
+      panel.dataset.memberId = memberId;
     }
     panel.hidden = !willShow;
     el("shortcut-toggle-btn").textContent = willShow ? "設定用の情報を隠す" : "設定用の情報を表示する";
