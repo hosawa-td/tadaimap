@@ -6,6 +6,7 @@ import cors from "cors";
 import express, { NextFunction, Request, Response } from "express";
 import { AppError } from "./errors";
 import { isEffectiveAdmin, Repository } from "./repository";
+import { isTestMemberName } from "./testMember";
 import { MemoryRepository } from "./repository.memory";
 import { SheetsRepository } from "./repository.sheets";
 import { PushSender, ExpoPushSender } from "./push";
@@ -191,10 +192,14 @@ export function createApp(
         throw new AppError("NOT_FOUND", "グループが見つかりません");
       }
       const members = await repository.getMembersByGroup(groupId);
+      // テスト用のメンバー(名前が「Test」「テスト_…」)は、テスト用のメンバー以外の人には見せない
+      const viewer = deviceId ? members.find((m) => m.deviceId === deviceId) : undefined;
+      const viewerIsTest = viewer ? isTestMemberName(viewer.name) : false;
+      const visible = viewerIsTest ? members : members.filter((m) => !isTestMemberName(m.name));
       res.status(200).json({
         inviteCode: group.inviteCode,
         nearbyLabel: group.nearbyLabel,
-        members: members.map((m) => toMemberView(m, deviceId, members, group.nearbyLabel)),
+        members: visible.map((m) => toMemberView(m, deviceId, members, group.nearbyLabel)),
       });
     })
   );
@@ -629,6 +634,8 @@ async function notifyGroupOfStatusChange(
   webPushSender: WebPushSender,
   member: Member
 ): Promise<void> {
+  // テスト用のメンバーの状態変更は、誰にも通知しない(一覧にも出さないため)
+  if (isTestMemberName(member.name)) return;
   // 読み込みを同時に行い、通知を出すまでの待ち時間を短くする
   const [group, groupMembers] = await Promise.all([
     repository.getGroup(member.groupId),

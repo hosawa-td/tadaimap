@@ -31,6 +31,7 @@ APIサーバーが提供するエンドポイント一覧。すべてスプレ�
 - リクエスト：ヘッダーに`device_id`
 - レスポンス：`{ "inviteCode": string, "nearbyLabel": string, "members": [{ "memberId", "nameOrAnonymous", "isMe", "status": "home"|"nearby"|"away", "statusUpdatedAt", "nearbyLabel", "homeDetail", "isAdmin", "home": { "lat", "lng", "homeRadiusM", "buildingRadiusM" } | null }] }`
 - 処理：`Members`から該当`group_id`の行を取得。`show_name=FALSE`のメンバーは`name_or_anonymous`を`"メンバー"`とする（本人の行のみ常に本名）。各メンバーの`nearbyLabel`は個人設定ではなく、トップレベルの`nearbyLabel`（グループ共通、F13）と同じ値を複製して返す。`isAdmin`はグループ作成者かどうか（既存データとの互換性のため、`is_admin`列が無い古いグループでは作成日時が最も古いメンバーを管理者とみなす）。`home`は自宅位置・判定範囲が登録済みの場合のみ値を持ち、**他メンバーの位置情報を見せないため`isMe`の行にしか入らない**（Web版の画面を開いた瞬間の簡易自動判定、F22で使用）。
+- **テスト用メンバーの非表示**：名前が「Test」（大文字・小文字は区別しない）、または「Test_」「テスト_」で始まるメンバーは、リクエストした端末がテスト用のメンバー本人でない限り、`members`に含めない（管理者にも返さない）。テスト用のメンバー本人には、全員を返す。`PATCH /members/:memberId/status`による通知も、テスト用のメンバーの変更では送らない。
 
 ### 4. `PATCH /members/:memberId/home` — 自宅位置・判定範囲の登録/変更（F3・F8・F22）
 
