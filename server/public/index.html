@@ -139,6 +139,19 @@
   .shortcut-steps summary{font-weight:700;cursor:pointer;}
   .shortcut-steps ol{padding-left:20px;margin:8px 0 0;}
   .shortcut-steps ul{padding-left:18px;margin:4px 0;}
+  .ios{background:#F2F2F7;border-radius:14px;padding:10px;margin:8px 0 12px;font-size:12.5px;line-height:1.5;color:#000;}
+  .ios .ttl{font-weight:700;text-align:center;margin-bottom:6px;font-size:12px;color:#555;}
+  .ios .act{background:#fff;border-radius:10px;padding:7px 10px;margin:6px 0;box-shadow:0 0 0 1px #E5E5EA;}
+  .ios .act > b{display:block;}
+  .ios .nest{margin-left:14px;}
+  .ios .pill{display:inline-block;background:#E3EEFF;color:#0A60D6;border-radius:6px;padding:0 6px;font-weight:600;}
+  .ios .var{display:inline-block;background:#FFEFD6;color:#9A5A00;border-radius:6px;padding:0 6px;font-weight:600;}
+  .ios .kv{display:flex;gap:8px;border-top:1px solid #EEE;padding:3px 0;}
+  .ios .kv span:first-child{flex:none;min-width:5.5em;color:#666;}
+  .ios .tip{color:#C0392B;font-size:11.5px;margin-top:2px;}
+  .ios .opt{display:flex;justify-content:space-between;border-top:1px solid #EEE;padding:4px 0;}
+  .ios .chk{color:#0A60D6;font-weight:700;}
+  .ios-note{font-size:11.5px;color:var(--text-faint);margin:0 0 8px;}
   [hidden]{display:none !important;}
 </style>
 </head>
@@ -282,15 +295,77 @@
         </details>
         <details class="shortcut-steps">
           <summary>ショートカットの作り方（おすすめ：切り替えのあと、時間をおいて状態を再確認する）</summary>
+          <p>Wi-Fiが切れた（つながった）直後は、通信がまだ使えず送信に失敗したり、一瞬だけ切れて間違った状態になったりします。そこで、<b>時間をおいて4回、いまのWi-Fiを見直して状態を送り直します</b>。作る量を減らすため、<b>「確認用のショートカット」を1つだけ作り、オートメーションから4回呼び出します</b>。</p>
+          <p class="ios-note">下の図は説明用のイメージです。実際の画面とは、細かい見た目や言葉が少し違うことがあります。</p>
+
+          <p><b>パート1：確認用のショートカットを作る（1回だけ）</b></p>
+          <p>「ショートカット」アプリの下の「ショートカット」タブで、右上の「＋」を押します。</p>
           <ol>
-            <li>外出用（接続解除）のオートメーションを開き、これまでの「URLの内容を取得」（status＝away を<b>すぐ送るもの</b>）を<b>削除</b>する（残すと、一瞬Wi-Fiが切れただけで家族に「外出しました」と通知が出ます）</li>
-            <li>アクションの先頭に「<b>待機</b>」（<b>10秒</b>）を追加</li>
-            <li>「<b>ネットワークの詳細を取得</b>」を追加し、種類を「Wi-Fi」、詳細を「ネットワーク名」にする</li>
-            <li>「<b>もし</b>」を追加し、条件を「ネットワーク名」「である」「自宅のWi-Fi名」にする</li>
-            <li>「もし」の中に「URLの内容を取得」（status＝<b>home</b>）、「そうでない場合」の中に「URLの内容を取得」（status＝<b>away</b>）を入れる。送信先URL・方法・本文は、上の手順と同じ。trigger は <b>wifi_recheck_10s</b> にする</li>
-            <li>手順2〜5を、「待機」の秒数を <b>20秒 → 70秒 → 80秒</b> に変えて、あと3回繰り返す（合計4回：10・30・100・180秒後。triggerは wifi_recheck_30s・wifi_recheck_100s・wifi_recheck_180s）</li>
+            <li>上の名前の欄に「<b>ただいマップ確認</b>」と付ける</li>
+            <li>「アクションを追加」で「<b>ネットワークの詳細を取得</b>」を探して追加する（「Wi-Fi」「ネットワーク名」になっていればそのまま）</li>
+            <li>その下に「<b>もし</b>」を追加する。条件欄を押して「<b>ネットワークの詳細</b>」（青い変数）を選び、「<b>である</b>」にして、右の欄に<b>自宅のWi-Fi名</b>をそのまま入力する（大文字・小文字も同じに）</li>
+            <li>「もし」と「そうでない場合」の間に「<b>URLの内容を取得</b>」を追加し、図2のとおりに設定する（status＝<b>home</b>）</li>
+            <li>「そうでない場合」と「終了」の間にも、同じものを追加する（アクションを長押し→「複製」→ドラッグで移すと早い）。<b>statusだけ away</b> にする</li>
+            <li>右上の「完了」を押す</li>
           </ol>
-          <p class="hint">・10秒・30秒後は、外出直後に通信がまだ使えず送信に失敗したときのやり直しです。100秒後は、直前の状態変更から90秒以内の「外出」を無視する仕組み（誤判定の防止）が過ぎてからの確認です。<br>・同じ状態の再送は無視されるので、通知や更新時刻は増えません。<br>・最初の数日は、家族の画面やログで、再確認のあとに在宅が保たれているか確かめてください。自宅にいるのに外出になる場合は、Wi-Fi名を読めていない可能性があります。<br>・長いショートカットは、iPhoneが途中で止めることがあります。最初は「10秒と100秒の2回」で試し、安定して動くか確かめてください。止められる場合は180秒後を省いて3回にします。<br>・オートメーションは「すぐに実行」にし、「実行時に通知」はオフにしてください。</p>
+
+          <div class="ios">
+            <div class="ttl">図1　確認用ショートカット「ただいマップ確認」の中身</div>
+            <div class="act"><b>ネットワークの詳細を取得</b><span class="pill">Wi-Fi</span> の <span class="pill">ネットワーク名</span></div>
+            <div class="act"><b>もし</b><span class="var">ネットワークの詳細</span> <span class="pill">である</span> <span class="pill">自宅のWi-Fi名</span>
+              <div class="act nest"><b>URLの内容を取得</b>status ＝ home（図2）</div>
+              <b>そうでない場合</b>
+              <div class="act nest"><b>URLの内容を取得</b>status ＝ away（図2）</div>
+              <b>終了</b></div>
+            <div class="tip">※Wi-Fi名が少しでも違うと、自宅にいても away が送られます</div>
+          </div>
+          <div class="ios">
+            <div class="ttl">図2　「URLの内容を取得」の中身（2つとも同じ。statusだけ違う）</div>
+            <div class="act">
+              <div class="kv"><span>URL</span><span>上の①送信先URLを貼り付け</span></div>
+              <div class="kv"><span>方法</span><span><span class="pill">PATCH</span></span></div>
+              <div class="kv"><span>本文を要求</span><span><span class="pill">JSON</span></span></div>
+              <div class="kv"><span>deviceId</span><span>上の②端末IDを貼り付け</span></div>
+              <div class="kv"><span>status</span><span><b>home</b>（もう一方は <b>away</b>）</span></div>
+              <div class="kv"><span>source</span><span>auto</span></div>
+              <div class="kv"><span>trigger</span><span><span class="var">ショートカットの入力</span></span></div>
+            </div>
+            <div class="tip">※「＞」を押すと方法・本文が出ます。キーはすべて「テキスト」で追加します。triggerの値欄を押すと、キーボードの上に変数が出るので「ショートカットの入力」を選びます</div>
+          </div>
+          <p>作ったら、<b>自宅のWi-Fiにつながった状態</b>でこのショートカットを1回押して試します。家族の画面の状態が「在宅」のまま変わらなければOKです（同じ状態の再送は無視されます）。</p>
+
+          <p><b>パート2：外出用のオートメーションを直す</b></p>
+          <p>「オートメーション」タブで、外出用（自宅Wi-Fiの<b>接続解除</b>）のオートメーションを開きます（新しく作る場合は、右上の「＋」→「Wi-Fi」→自宅のWi-Fiを選び、「接続」のチェックを外して「<b>接続解除</b>」だけにチェック→「次へ」。図3）。</p>
+          <div class="ios">
+            <div class="ttl">図3　外出用オートメーションの条件</div>
+            <div class="act">
+              <div class="opt" style="border:0;"><span>ネットワーク</span><span class="pill">自宅のWi-Fi名</span></div>
+              <div class="opt"><span>接続</span><span class="chk">（チェックなし）</span></div>
+              <div class="opt"><span>接続解除</span><span class="chk">✓ チェックあり</span></div>
+            </div>
+            <div class="act"><div class="opt" style="border:0;"><span>すぐに実行</span><span class="chk">✓</span></div>
+              <div class="opt"><span>実行時に通知</span><span>オフ</span></div></div>
+          </div>
+          <ol>
+            <li>今ある「URLの内容を取得」（awayを<b>すぐ送るもの</b>）を、<b>左にスワイプして削除</b>する（残すと、一瞬Wi-Fiが切れただけで家族に「外出しました」と通知が出ます）</li>
+            <li>「アクションを追加」で「<b>待機</b>」を追加し、「1秒」の青い「1」を押して <b>10</b> にする</li>
+            <li>「<b>ショートカットを実行</b>」を追加し、「ショートカット」の欄で「<b>ただいマップ確認</b>」を選ぶ。「入力」の欄を押して「<b>テキスト</b>」を選び、<b>wifi_recheck_10s</b> と入力する（triggerの値になり、ログで何秒後の確認か分かる）</li>
+            <li>「待機」と「ショートカットを実行」のセットを、図4の表のとおりに、あと3回追加する（長押し→「複製」→秒数とテキストだけ変えると早い）</li>
+            <li>右上の「完了」を押し、「すぐに実行」で「実行時に通知」がオフになっているか確かめる</li>
+          </ol>
+          <div class="ios">
+            <div class="ttl">図4　外出用オートメーションのアクション（「待機」は前回からの間隔）</div>
+            <div class="act"><b>待機</b><span class="pill">10 秒</span></div>
+            <div class="act"><b>ショートカットを実行</b><span class="pill">ただいマップ確認</span>　入力：<span class="pill">wifi_recheck_10s</span></div>
+            <div class="act"><b>待機</b><span class="pill">20 秒</span></div>
+            <div class="act"><b>ショートカットを実行</b><span class="pill">ただいマップ確認</span>　入力：<span class="pill">wifi_recheck_30s</span></div>
+            <div class="act"><b>待機</b><span class="pill">70 秒</span></div>
+            <div class="act"><b>ショートカットを実行</b><span class="pill">ただいマップ確認</span>　入力：<span class="pill">wifi_recheck_100s</span></div>
+            <div class="act"><b>待機</b><span class="pill">80 秒</span></div>
+            <div class="act"><b>ショートカットを実行</b><span class="pill">ただいマップ確認</span>　入力：<span class="pill">wifi_recheck_180s</span></div>
+            <div class="tip">※合計で、Wi-Fiが切れてから10・30・100・180秒後に確認します。接続用のオートメーション（自宅Wi-Fiに接続→home）は、そのままで大丈夫です</div>
+          </div>
+          <p class="hint">・10秒・30秒後は、外出直後に通信がまだ使えず送信に失敗したときのやり直しです。100秒後は、直前の状態変更から90秒以内の「外出」を無視する仕組み（誤判定の防止）が過ぎてからの確認です。<br>・同じ状態の再送は無視されるので、通知や更新時刻は増えません。<br>・試すときは、自宅のWi-Fiを一度オフ→オンにして、管理者のログ画面などで、triggerが wifi_recheck_… の行が出ているか確かめてください。自宅にいるのに外出になる場合は、Wi-Fi名の入力違いか、Wi-Fi名を読めていない可能性があります。<br>・長いショートカットは、iPhoneが途中で止めることがあります。180秒後の確認が出ない日が続く場合は、4回目を外して3回にしてください。</p>
         </details>
         <p class="hint">・家の中で一瞬Wi-Fiが切れた場合も「切断」として扱われます。<br>・別の家族グループに切り替えた場合は、送信先URLが変わるため作り直してください。<br>・作ったら、Wi-Fiを一度オフ→オンにして、家族の画面で状態が切り替わるか確かめてください。</p>
       </div>
