@@ -33,17 +33,24 @@ async function setup() {
   return { app, push, groupId, kaiId: kai.body.memberId as string, testId: test.body.memberId as string, papaId };
 }
 
-describe("テスト用メンバーの非表示", () => {
-  it("テスト用メンバー以外の一覧には、テスト用メンバーが出ない", async () => {
+describe("テスト用メンバーの非表示(管理者とテスト用メンバー本人には見える)", () => {
+  it("管理者以外の一覧には、テスト用メンバーが出ない", async () => {
     const { app, groupId } = await setup();
-    for (const dev of ["dev-papa", "dev-kai"]) {
-      const res = await request(app).get(`/groups/${groupId}/members`).set("x-device-id", dev);
-      expect(res.status).toBe(200);
-      const names = res.body.members.map((m: { nameOrAnonymous: string }) => m.nameOrAnonymous);
-      expect(names).toEqual(expect.arrayContaining(["パパ", "かい"]));
-      expect(names).not.toContain("Test");
-      expect(res.body.members).toHaveLength(2);
-    }
+    const res = await request(app).get(`/groups/${groupId}/members`).set("x-device-id", "dev-kai");
+    expect(res.status).toBe(200);
+    const names = res.body.members.map((m: { nameOrAnonymous: string }) => m.nameOrAnonymous);
+    expect(names).toEqual(expect.arrayContaining(["パパ", "かい"]));
+    expect(names).not.toContain("Test");
+    expect(res.body.members).toHaveLength(2);
+  });
+
+  it("管理者には、テスト用メンバーも見える", async () => {
+    const { app, groupId } = await setup();
+    const res = await request(app).get(`/groups/${groupId}/members`).set("x-device-id", "dev-papa");
+    expect(res.status).toBe(200);
+    const names = res.body.members.map((m: { nameOrAnonymous: string }) => m.nameOrAnonymous);
+    expect(names).toEqual(expect.arrayContaining(["パパ", "かい", "Test"]));
+    expect(res.body.members).toHaveLength(3);
   });
 
   it("テスト用メンバー本人には、全員が見える", async () => {

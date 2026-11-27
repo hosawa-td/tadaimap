@@ -192,10 +192,10 @@ export function createApp(
         throw new AppError("NOT_FOUND", "グループが見つかりません");
       }
       const members = await repository.getMembersByGroup(groupId);
-      // テスト用のメンバー(名前が「Test」「テスト_…」)は、テスト用のメンバー以外の人には見せない
+      // テスト用のメンバー(名前が「Test」「テスト_…」)は、テスト用のメンバー本人と管理者以外には見せない
       const viewer = deviceId ? members.find((m) => m.deviceId === deviceId) : undefined;
-      const viewerIsTest = viewer ? isTestMemberName(viewer.name) : false;
-      const visible = viewerIsTest ? members : members.filter((m) => !isTestMemberName(m.name));
+      const canSeeTestMembers = viewer ? isTestMemberName(viewer.name) || isEffectiveAdmin(viewer, members) : false;
+      const visible = canSeeTestMembers ? members : members.filter((m) => !isTestMemberName(m.name));
       res.status(200).json({
         inviteCode: group.inviteCode,
         nearbyLabel: group.nearbyLabel,
