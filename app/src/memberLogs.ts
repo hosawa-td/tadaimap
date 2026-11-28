@@ -82,6 +82,7 @@ const IGNORE_REASON_LABEL: Record<string, string> = {
   same_status: "すでに同じ状態",
   duplicate: "直前の重複",
   flip_flop: "直前の変更から90秒以内の外出",
+  nearby_recheck: "別の部屋のWi-Fi中（施設内）の再確認による外出",
 };
 
 function join(parts: (string | undefined)[], separator: string): string {

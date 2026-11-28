@@ -40,6 +40,7 @@ const recentAutoStatus = new Map<string, { status: PresenceStatus; atMs: number 
  * 自動(source=auto)の状態更新を無視すべきなら、その理由を返す。反映してよければnull。
  * - same_status: すでに同じ状態。変更ではないので通知・時刻更新をしない
  * - duplicate: 直前に同じ自動更新を受け付けたばかり(同時二重送信)
+ * - nearby_recheck: 施設内(別の部屋のWi-Fi)の間に届いた、Wi-Fiの再確認(wifi_recheck_…)による「外出」
  * - flip_flop: 帰宅などの直後に届いた「外出」。家の中でWi-Fiが一瞬切れただけの可能性が高い
  *   ※「帰宅(home)」は無視しない。誤判定で外出になっても、再接続で必ず戻せるようにするため
  */
@@ -47,8 +48,9 @@ function decideIgnoreAutoStatus(
   memberId: string,
   next: PresenceStatus,
   before: Member,
-  nowMs: number
-): "same_status" | "duplicate" | "flip_flop" | null {
+  nowMs: number,
+  trigger?: string
+): "same_status" | "duplicate" | "flip_flop" | "nearby_recheck" | null {
   const recent = recentAutoStatus.get(memberId);
   if (recent && recent.status === next && nowMs - recent.atMs < AUTO_DUPLICATE_WINDOW_MS) {
     return "duplicate";
@@ -56,6 +58,18 @@ function decideIgnoreAutoStatus(
   // 管理者による強制変更中の状態は、本人の自動更新で上書きされる(従来どおり)ため、ここでは判定しない
   if (before.status === next && !before.statusSetByAdmin) {
     return "same_status";
+  }
+  // 別の部屋・別の階のWi-Fi(施設内=nearby)につながっている間は、自宅Wi-Fiの切断をきっかけにした
+  // 再確認(trigger=wifi_recheck_…)の「外出」で、施設内を上書きしない。
+  // (家の外へ出たのではなく、別の部屋へ移っただけの可能性が高いため。自宅Wi-Fiなら「帰宅」は通す)
+  if (
+    next === "away" &&
+    before.status === "nearby" &&
+    !before.statusSetByAdmin &&
+    typeof trigger === "string" &&
+    trigger.startsWith("wifi_recheck")
+  ) {
+    return "nearby_recheck";
   }
   if (next === "away" && before.status !== "away" && !before.statusSetByAdmin) {
     const lastChangeMs = Date.parse(before.statusUpdatedAt);
@@ -292,7 +306,7 @@ export function createApp(
 
       // 自動(ショートカット等)からの要求だけ、重複・誤判定のガードを通す。手動操作は常に反映する。
       if (source === "auto" && before) {
-        const ignoreReason = decideIgnoreAutoStatus(memberId, status as PresenceStatus, before, nowMs);
+        const ignoreReason = decideIgnoreAutoStatus(memberId, status as PresenceStatus, before, nowMs, trigger);
         if (ignoreReason) {
           writeLog("status_ignored", { from: fromStatus, to: status, reason: ignoreReason, source, trigger, ua });
           res.status(200).json({ ok: true, ignored: ignoreReason });

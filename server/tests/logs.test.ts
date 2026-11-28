@@ -75,6 +75,33 @@ describe("接続状況ログ", () => {
       expect(logs.filter((l) => l.event === "status_change")).toHaveLength(1);
     });
 
+    it("別の部屋のWi-Fi(施設内)の間は、Wi-Fi再確認(wifi_recheck_…)の「外出」を無視し、施設内を保つ", async () => {
+      const { app, repository, memberId } = await setup();
+      await send(app, memberId, "nearby");
+      const res = await send(app, memberId, "away", { trigger: "wifi_recheck_10s" });
+      expect(res.body.ignored).toBe("nearby_recheck");
+      expect((await repository.getMemberById(memberId))?.status).toBe("nearby");
+      await wait();
+      const logs = await repository.getLogs({ memberId, limit: 10 });
+      expect(JSON.parse(logs[0].detail)).toMatchObject({ reason: "nearby_recheck", trigger: "wifi_recheck_10s" });
+    });
+
+    it("施設内のとき、再確認でも自宅Wi-Fiなら「帰宅」は反映する", async () => {
+      const { app, repository, memberId } = await setup();
+      await send(app, memberId, "nearby");
+      expect((await send(app, memberId, "home", { trigger: "wifi_recheck_30s" })).body.ignored).toBeUndefined();
+      expect((await repository.getMemberById(memberId))?.status).toBe("home");
+    });
+
+    it("施設内のとき、triggerが再確認でない「外出」は、nearby_recheckでは無視しない", async () => {
+      const { app, memberId } = await setup();
+      await send(app, memberId, "nearby");
+      const res = await send(app, memberId, "away", { trigger: "wifi_disconnect" });
+      expect(res.body.ignored).not.toBe("nearby_recheck");
+      const res2 = await send(app, memberId, "away");
+      expect(res2.body.ignored).not.toBe("nearby_recheck");
+    });
+
     it("帰宅の直後に届いた自動の「外出」は無視し、帰宅状態を保つ", async () => {
       const { app, repository, memberId } = await setup();
       await send(app, memberId, "home");

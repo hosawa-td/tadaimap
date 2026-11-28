@@ -46,7 +46,7 @@ APIサーバーが提供するエンドポイント一覧。すべてスプレ�
 - レスポンス：`{ "ok": true }`
 - 権限：`device_id`が対象メンバー本人のものでなくても、同じグループの管理者（F12）であれば実行できる（それ以外は`403 FORBIDDEN`）
 - 処理：`status`を更新し、`home_detail`（F16）を空にリセットする。あわせて、変更前後の状態・`source`・User-Agent・管理者による代理変更かどうかを`Logs`シートへ`origin="server"`、`event="status_change"`で記録する（F26。記録に失敗しても状態更新は成功として返す）。任意の`trigger`（例：`wifi_connect`／`wifi_disconnect`。最大30文字）を送ると、どの自動化が送ったかをログの`detail`に記録する。
-- 自動更新（`source="auto"`）のガード：次の場合は状態を更新・通知せず、`200 {ok:true, ignored:<理由>}`を返し、`event="status_ignored"`で記録する。①`same_status`＝すでに同じ状態 ②`duplicate`＝同じ自動更新を5秒以内に受け付け済み ③`flip_flop`＝直前の状態変更から90秒以内の自動「外出(away)」（家の中でWi-Fiが一瞬切れた誤判定の対策。「帰宅」は無視しない）。手動（`source`が`auto`以外）は常に反映する。
+- 自動更新（`source="auto"`）のガード：次の場合は状態を更新・通知せず、`200 {ok:true, ignored:<理由>}`を返し、`event="status_ignored"`で記録する。①`same_status`＝すでに同じ状態 ②`duplicate`＝同じ自動更新を5秒以内に受け付け済み ③`flip_flop`＝直前の状態変更から90秒以内の自動「外出(away)」（家の中でWi-Fiが一瞬切れた誤判定の対策。「帰宅」は無視しない） ④`nearby_recheck`＝現在の状態が「施設内(nearby)」のとき（管理者の強制変更中を除く）に、`trigger`が`wifi_recheck`で始まる自動「外出(away)」（別の部屋・別の階のWi-Fiへ移っただけで、再確認が「施設内」を「外出中」に上書きするのを防ぐ。再確認の「帰宅」は無視しない）。手動（`source`が`auto`以外）は常に反映する。
   - `device_id`が本人のものである場合（通常の変更）：`status_updated_at`を現在時刻に更新し、`status_set_by_admin`を`FALSE`にする。更新後、同グループの他メンバーのうち`notify_enabled=TRUE`の端末へ、ネイティブアプリには`push_token`を用いてExpo Push Notification Service経由、Web版には`web_push_subscription`を用いてWeb Push（VAPID）経由で、それぞれ独立に通知を送信する。通知の送信に失敗しても、本エンドポイントのレスポンスは`200 OK`のまま返す（状態更新自体は成立しているため）。
   - `device_id`が管理者自身のもので、対象が別メンバーである場合（代理変更）：`status_updated_at`は更新せず（本人が実際に帰宅・外出した時刻ではないため）、`status_set_by_admin`を`TRUE`にする。この場合、通知は一切送信しない（本人の意思によらない変更のため）。
 - `GET /groups/:groupId/members`のレスポンスに含まれる`statusSetByAdmin`が`true`の間は、アプリ・Web版とも一覧上で帰宅・外出時刻を表示しない（F12を参照）。本人が改めて自分で状態を変更すると`status_set_by_admin`は`FALSE`に戻り、通常どおり時刻が表示されるようになる。
